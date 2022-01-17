@@ -3,7 +3,6 @@
 	import Selector from '$lib/utilities/Selector.svelte';
 	import { goto } from '$app/navigation';
 
-	import ToggleDarkMode from '$lib/utilities/ToggleDarkMode.svelte';
 	import { media_type } from '$lib/stores/store';
 
 	function toggleHome() {
@@ -12,8 +11,8 @@
 	}
 </script>
 
-<header class=" w-full z-50 fixed top-0  h-11 bg-skin-primary">
-	<div class="   max-w-7xl mx-auto flex justify-between pl-2 md:pl-5 lg:pl-7 pr-1 items-center  ">
+<header class="w-full z-50 fixed top-0 h-12 bg-skin-primary">
+	<div class="h-12 max-w-7xl mx-auto flex justify-between pl-2 md:pl-5 lg:pl-7 pr-1 items-center  ">
 		<div class="flex flex-row items-center">
 			<button
 				on:click|preventDefault={toggleHome}
@@ -23,7 +22,7 @@
 			</button>
 			<Selector />
 		</div>
-		<ToggleDarkMode />
+
 		<Search />
 	</div>
 </header>

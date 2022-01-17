@@ -14,7 +14,7 @@ export const theme_dark: Writable<boolean> = writable(false);
 export const show_name: Writable<string> = writable('');
 export const season_count: Writable<number> = writable(0);
 export const show_id: Writable<number> = writable(0);
-export const data = writable([])
+export const data: Writable<DataType[]> = writable([])
 
 export const tv_genres: Writable<Genre[]> = writable([]);
 export const movie_genres: Writable<Genre[]> = writable([]);

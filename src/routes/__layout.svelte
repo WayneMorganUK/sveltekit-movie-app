@@ -19,8 +19,10 @@
 <script lang="ts">
 	import '../app.css';
 	import Header from '$lib/components/Header.svelte';
-	import { theme } from '$lib/stores/theme-store';
-	theme.init();
+	import { theme } from '$lib/stores/theme';
+	// import { theme } from '$lib/stores/theme-store';
+	// theme.init();
+	$: console.log('theme ', $theme);
 </script>
 
 <svelte:head>
@@ -39,10 +41,8 @@
 	<meta name="author" content="Wayne Morgan" />
 </svelte:head>
 
-<main class:$theme class=" ">
-	<div
-		class=" w-full -z-50 fixed top-0  bg-gradient-to-r from-skin-bg to-skin-border min-h-screen"
-	/>
+<main class={$theme}>
+	<div class="fixed top-0 w-full min-h-screen -z-50 bg-gradient-to-r from-skin-bg to-skin-border" />
 
 	<Header />
 	<section class=" mt-[52px] max-w-7xl mx-auto">

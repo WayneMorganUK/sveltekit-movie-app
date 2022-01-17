@@ -7,7 +7,6 @@
 	export function hide(): void {
 		shown = false;
 	}
-	$: console.log('modal trailer id', $trailer_key);
 </script>
 
 {#if shown}

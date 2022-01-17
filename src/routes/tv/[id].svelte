@@ -3,7 +3,7 @@
 	/**
 	 * @type {import('@sveltejs/kit').Load}
 	 */
-	export async function load({ fetch, page }) {
+	export async function load({ fetch, params }) {
 		media_type.set('tv');
 		const res = await (
 			await fetch('../api/postData', {
@@ -14,7 +14,7 @@
 				body: JSON.stringify({
 					api_ref: 'show_detail',
 					media: 'tv',
-					id: page.params.id
+					id: params.id
 				})
 			})
 		).json();
@@ -29,7 +29,7 @@
 				body: JSON.stringify({
 					api_ref: 'trailer',
 					media: 'tv',
-					id: page.params.id
+					id: params.id
 				})
 			})
 		).json();
@@ -43,7 +43,7 @@
 				body: JSON.stringify({
 					api_ref: 'cast',
 					media: 'tv',
-					id: page.params.id
+					id: params.id
 				})
 			})
 		).json();
@@ -62,7 +62,7 @@
 	import TvMedia from '$lib/pages/TvMedia.svelte';
 	import { page } from '$app/stores';
 	export let tv_details: TvType;
-	export let trailer_details: Trailer_type[];
+	export let trailer_details: TrailerType[];
 	export let cast: CastType[];
 
 	let tv_id: string = $page.params.id;

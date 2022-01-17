@@ -2,7 +2,7 @@
 	/**
 	 * @type {import('@sveltejs/kit').Load}
 	 */
-	export async function load({ fetch, page }) {
+	export async function load({ fetch, params }) {
 		const res = await (
 			await fetch('../../../api/postData', {
 				headers: {
@@ -11,9 +11,9 @@
 				method: 'POST',
 				body: JSON.stringify({
 					api_ref: 'episode',
-					id: page.params.id,
-					season_number: page.params.season_number,
-					episode_number: page.params.episode_number
+					id: params.id,
+					season_number: params.season_number,
+					episode_number: params.episode_number
 				})
 			})
 		).json();
@@ -28,7 +28,7 @@
 
 <script lang="ts">
 	import Episode from '$lib/pages/Episode.svelte';
-	export let episode_details: Episodes;
+	export let episode_details: EpisodesType;
 </script>
 
 <Episode {episode_details} />

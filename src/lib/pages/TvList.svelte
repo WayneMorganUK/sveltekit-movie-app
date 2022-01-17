@@ -2,6 +2,7 @@
 	import TvCard from '$lib/components/TvCard.svelte';
 	import { data } from '$lib/stores/store';
 	import Skeleton from '$lib/utilities/Skeleton.svelte';
+	let TvData = $data as TvType[];
 </script>
 
 <section
@@ -9,7 +10,7 @@
 	class="bg-skin-tertiary flex flex-wrap justify-around max-w-7xl mx-auto xl:mt-2 xl:rounded-2xl"
 >
 	{#if $data}
-		{#each $data as datum}
+		{#each TvData as datum}
 			<TvCard {datum} />
 		{/each}
 	{:else}

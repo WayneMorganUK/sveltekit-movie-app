@@ -1,7 +1,7 @@
 <script lang="ts">
 	// import SeasonTitle from '$lib/components/SeasonTitle.svelte';
 	const IMAGE_API = 'https://image.tmdb.org/t/p/original';
-	export let episode_details: Episodes;
+	export let episode_details: EpisodesType;
 	// let selected_season:number = episode_details.episode_number
 </script>
 

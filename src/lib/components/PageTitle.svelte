@@ -12,9 +12,9 @@
 	} else {
 		media_option = 'Movies';
 	}
-	if ($page.path.startsWith('/search/')) {
-		page_title = media_option + ' > Search > ' + $page.path.substring(8);
-	} else if ($page.path !== '/') {
+	if ($page.url.pathname.startsWith('/search/')) {
+		page_title = media_option + ' > Search > ' + $page.url.pathname.substring(8);
+	} else if ($page.url.pathname !== '/') {
 		if ($media_type === 'tv') {
 			genre = $tv_genres.find((item) => (item.id as unknown) == $page.params.id).name;
 		} else {

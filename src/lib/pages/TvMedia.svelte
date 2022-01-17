@@ -15,7 +15,7 @@
 	import { tooltip } from '$lib/utilities/tooltip';
 
 	export let tv_details: TvType;
-	export let trailer_details: Trailer_type[];
+	export let trailer_details: TrailerType[];
 	export let tv_id: string;
 	export let cast: CastType[];
 

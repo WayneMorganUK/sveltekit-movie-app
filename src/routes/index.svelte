@@ -6,25 +6,30 @@
 	export async function load({ fetch }) {
 		data.set(undefined);
 		current_page.set(1);
-		const res = await (
-			await fetch('/api/postData', {
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				method: 'POST',
-				body: JSON.stringify({
-					media: 'movie',
-					api_ref: 'show',
-					page: '1'
-				})
+		const res = await fetch('/api/postData', {
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			method: 'POST',
+			body: JSON.stringify({
+				media: 'movie',
+				api_ref: 'show',
+				page: '1'
 			})
-		).json();
-		data.set(await res.res.results);
-		const total_pages = await res.res.total_pages;
+		});
+		const json_res = await res.json();
+		data.set(json_res.res.results);
+		const total_pages = await json_res.res.total_pages;
+		if (res.ok) {
+			return {
+				props: {
+					total_pages
+				}
+			};
+		}
 		return {
-			props: {
-				total_pages
-			}
+			status: res.status,
+			error: new Error('failure to communicate')
 		};
 	}
 </script>
@@ -36,4 +41,6 @@
 	$selected = null;
 </script>
 
-<MainSection {total_pages} />
+{#key $data}
+	<MainSection {total_pages} />
+{/key}

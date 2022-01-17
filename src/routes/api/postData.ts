@@ -16,6 +16,7 @@ const urls = {
 }
 
 export async function post(request: { body: { [x: string]: string } }): Promise<{ body: string; }> {
+    // await new Promise(resolve => setTimeout(resolve, 1000))
     try {
         const fetch_url = base + [eval('`' + urls[request.body["api_ref"]] + '`')]
         const res = await (await fetch(fetch_url)).json()

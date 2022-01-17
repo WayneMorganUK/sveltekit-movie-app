@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { show_name, show_id } from '$lib/stores/store';
-	export let season_details: Seasons_type[];
+	export let season_details: SeasonsType[];
 </script>
 
 <div

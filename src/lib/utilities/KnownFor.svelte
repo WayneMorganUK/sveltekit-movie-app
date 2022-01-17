@@ -1,10 +1,10 @@
 <script lang="ts">
-	export let knownFor;
+	export let knownFor: KnownForType[];
 
-	type TaggedMovie = MovieType & { media_type: 'movie' };
-	type TaggedTv = TvType & { media_type: 'tv' };
-	let films: TaggedMovie[] = [];
-	let tv: TaggedTv[] = [];
+	// type TaggedMovie = MovieType & { media_type: 'movie' };
+	// type TaggedTv = TvType & { media_type: 'tv' };
+	let films: KnownForType[];
+	let tv: KnownForType[];
 
 	const IMAGE_API = 'https://image.tmdb.org/t/p/w300';
 	films = knownFor.filter(isMovie);
@@ -13,10 +13,10 @@
 	films.sort((a, b) => (a.release_date > b.release_date ? -1 : 1));
 	tv.sort((a, b) => (a.first_air_date > b.first_air_date ? -1 : 1));
 
-	function isMovie(x: TaggedTv | TaggedMovie): x is TaggedMovie {
+	function isMovie(x: { media_type: string }) {
 		return x.media_type === 'movie';
 	}
-	function isTv(x: TaggedTv | TaggedMovie): x is TaggedTv {
+	function isTv(x: { media_type: string }) {
 		return x.media_type === 'tv';
 	}
 </script>

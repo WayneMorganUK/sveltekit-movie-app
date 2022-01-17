@@ -3,7 +3,7 @@
 	import ProgressBar from '$lib/utilities/ProgressBar.svelte';
 	const IMAGE_API = 'https://image.tmdb.org/t/p/w300';
 	export let datum: TvType;
-	$show_name = datum.name;
+	// $show_name = datum.name;
 </script>
 
 <section id="tv-card" class="group perspective-1000 w-44 xl:w-60 my-0.5 xl:my-2 xl:rounded-lg">

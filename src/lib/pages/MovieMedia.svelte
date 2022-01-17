@@ -7,7 +7,7 @@
 	import { tooltip } from '$lib/utilities/tooltip';
 
 	export let movie_details: MovieType;
-	export let trailer_details: Trailer_type[];
+	export let trailer_details: TrailerType[];
 
 	// export let movie_id: string;
 	export let cast: CastType[];
@@ -87,17 +87,13 @@
 					>
 						{#if trailer_details.length > 0}
 							{#each trailer_details as trailer}
-								<div class="w-56 flex-shrink-0 pl-2 cursor-pointer hover:opacity-80">
-									<button
-										on:click={() => showModal(trailer.key, trailer.site)}
-										title={trailer.name}
-										use:tooltip
-									>
-										<img
-											src={`https://img.youtube.com/vi/${trailer.key}/0.jpg`}
-											alt={trailer.name}
-										/>
-									</button>
+								<div
+									class="w-56 flex-shrink-0 pl-2 cursor-pointer hover:opacity-80"
+									on:click={() => showModal(trailer.key, trailer.site)}
+									title={trailer.name}
+									use:tooltip
+								>
+									<img src={`https://img.youtube.com/vi/${trailer.key}/0.jpg`} alt={trailer.name} />
 								</div>
 							{/each}
 							<!-- <p class="flex justify-center ml-4 text-2xl items-center">Play Trailer</p> -->

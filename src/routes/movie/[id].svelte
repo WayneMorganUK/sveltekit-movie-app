@@ -3,7 +3,7 @@
 	/**
 	 * @type {import('@sveltejs/kit').Load}
 	 */
-	export async function load({ fetch, page }) {
+	export async function load({ fetch, params }) {
 		media_type.set('movie');
 		const res = await (
 			await fetch('../api/postData', {
@@ -14,7 +14,7 @@
 				body: JSON.stringify({
 					api_ref: 'show_detail',
 					media: 'movie',
-					id: page.params.id
+					id: params.id
 				})
 			})
 		).json();
@@ -29,7 +29,7 @@
 				body: JSON.stringify({
 					api_ref: 'trailer',
 					media: 'movie',
-					id: page.params.id
+					id: params.id
 				})
 			})
 		).json();
@@ -43,7 +43,7 @@
 				method: 'POST',
 				body: JSON.stringify({
 					api_ref: 'cast',
-					id: page.params.id,
+					id: params.id,
 					media: 'movie'
 				})
 			})
@@ -62,7 +62,7 @@
 <script lang="ts">
 	import MovieMedia from '$lib/pages/MovieMedia.svelte';
 	export let movie_details: MovieType;
-	export let trailer_details: Trailer_type[];
+	export let trailer_details: TrailerType[];
 	export let cast: CastType[];
 </script>
 

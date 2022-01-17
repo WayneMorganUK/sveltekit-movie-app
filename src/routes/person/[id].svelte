@@ -4,7 +4,7 @@
 	 * @type {import('@sveltejs/kit').Load}
 	 */
 
-	export async function load({ fetch, page }) {
+	export async function load({ fetch, params }) {
 		const res = await (
 			await fetch('../api/postData', {
 				headers: {
@@ -14,7 +14,7 @@
 				body: JSON.stringify({
 					api_ref: 'person',
 					media: 'person',
-					id: page.params.id
+					id: params.id
 				})
 			})
 		).json();
@@ -28,7 +28,7 @@
 				method: 'POST',
 				body: JSON.stringify({
 					api_ref: 'known_for',
-					person: page.params.id
+					person: params.id
 				})
 			})
 		).json();
@@ -49,7 +49,7 @@
 	$media_type = 'person';
 
 	export let person: PersonType;
-	export let knownFor: KnownForType;
+	export let knownFor: KnownForType[];
 </script>
 
 <Person {person} {knownFor} />
