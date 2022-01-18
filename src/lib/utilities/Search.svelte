@@ -15,13 +15,13 @@
 <section id="search" class="flex flex-row">
 	<ToggleDarkMode />
 	<form
-		class="flex justify-end items-center pr-0.5"
+		class=" text-skin-base flex justify-end items-center pr-0.5"
 		label="search form"
 		on:submit|preventDefault={handleOnSubmit}
 	>
 		<input
 			label="search"
-			class=" bg-transparent w-24 lg:w-48 h-8 rounded-full text-lg px-2 placeholder-text-skin-base::placeholder border-2 border-skin-border"
+			class="w-24 h-8 px-2 text-lg bg-transparent border-2 rounded-full lg:w-48 placeholder-text-skin-base::placeholder border-skin-border"
 			type="text"
 			placeholder="Search..."
 			bind:value={searchTerm}

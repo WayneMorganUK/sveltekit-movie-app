@@ -1,7 +1,7 @@
 const api = import.meta.env.VITE_API_KEY
 const TV_NETWORKS_API = `https://api.themoviedb.org/3/watch/providers/tv?api_key=${api}&language=en-US`
 
-export const get = async () => {
+export async function get(): Promise<{ body: string; }> {
 	try {
 		const response: Response = await fetch(TV_NETWORKS_API);
 		const response_json = await response.json();

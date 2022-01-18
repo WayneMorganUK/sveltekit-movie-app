@@ -1,9 +1,9 @@
 <script lang="ts">
-	export let cast = [];
+	export let cast_details = [];
 	const IMAGE_API = 'https://image.tmdb.org/t/p/w200/';
 </script>
 
-{#if cast.length}
+{#if cast_details.length}
 	<section
 		id="people"
 		class="pt-1 mx-auto max-w-7xl xl:mt-5 xl:mb-10 bg-skin-secondary xl:pl-5 xl:rounded-2xl"
@@ -16,7 +16,7 @@
 		<div
 			class="relative flex flex-wrap justify-center sm:justify-start sm:flex-nowrap sm:overflow-y-hidden"
 		>
-			{#each cast as person}
+			{#each cast_details as person}
 				<div
 					class="w-28 flex-shrink-0 mb-2 rounded relative bg-skin-primary m-0.5 sm:mr-3 hover:bg-selected"
 				>

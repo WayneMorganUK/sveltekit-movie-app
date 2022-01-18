@@ -28,7 +28,7 @@
 		}
 		return {
 			status: res.status,
-			error: new Error('failure to communicate')
+			error: new Error('what we have here is a failure to communicate')
 		};
 	}
 </script>

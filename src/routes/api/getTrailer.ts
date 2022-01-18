@@ -1,6 +1,6 @@
 const api = import.meta.env.VITE_API_KEY
 
-export const post = async (request: { body: { [x: string]: string; }; }) => {
+export async function post(request: { body: { [x: string]: string } }): Promise<{ body: string; }> {
     try {
         const api_url = `https://api.themoviedb.org/3/${request.body["media"]}/${request.body["id"]}/videos?api_key=${api}&language=en-US`
         const res_mov = await fetch(api_url);

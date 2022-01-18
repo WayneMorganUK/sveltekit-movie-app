@@ -5,53 +5,47 @@
 	 */
 	export async function load({ fetch, params }) {
 		media_type.set('movie');
-		const res = await (
-			await fetch('../api/getMovie', {
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				method: 'POST',
-				body: JSON.stringify({
-					media: 'movie',
-					id: params.id
-				})
+		const movie_res = await fetch('../api/getMovie', {
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			method: 'POST',
+			body: JSON.stringify({
+				media: 'movie',
+				id: params.id
 			})
-		).json();
-		const movie_details = await res.res;
-
-		const trailer = await (
-			await fetch('../api/getTrailer', {
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				method: 'POST',
-				body: JSON.stringify({
-					media: 'movie',
-					id: params.id
-				})
+		});
+		const movie = await movie_res.json();
+		const movie_details = await movie.res;
+		const trailer_res = await fetch('../api/getTrailer', {
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			method: 'POST',
+			body: JSON.stringify({
+				media: 'movie',
+				id: params.id
 			})
-		).json();
+		});
+		const trailer = await trailer_res.json();
 		const trailer_details = trailer.res.results;
-
-		const resp = await (
-			await fetch('../../api/postData', {
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				method: 'POST',
-				body: JSON.stringify({
-					api_ref: 'cast',
-					id: params.id,
-					media: 'movie'
-				})
+		const cast_res = await fetch('../../api/getCast', {
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			method: 'POST',
+			body: JSON.stringify({
+				id: params.id,
+				media: 'movie'
 			})
-		).json();
-		const cast = await resp.res.cast;
+		});
+		const cast = await cast_res.json();
+		const cast_details = await cast.res.cast;
 		return {
 			props: {
 				movie_details,
 				trailer_details,
-				cast
+				cast_details
 			}
 		};
 	}
@@ -61,7 +55,7 @@
 	import MovieMedia from '$lib/pages/MovieMedia.svelte';
 	export let movie_details: MovieType;
 	export let trailer_details: TrailerType[];
-	export let cast: CastType[];
+	export let cast_details: CastType[];
 </script>
 
-<MovieMedia {movie_details} {trailer_details} {cast} />
+<MovieMedia {movie_details} {trailer_details} {cast_details} />

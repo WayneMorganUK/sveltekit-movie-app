@@ -10,7 +10,7 @@
 	export let trailer_details: TrailerType[];
 
 	// export let movie_id: string;
-	export let cast: CastType[];
+	export let cast_details: CastType[];
 
 	const IMAGE_API = 'https://image.tmdb.org/t/p/';
 	let modal: { show: () => any };
@@ -27,7 +27,7 @@
 {#if movie_details.id && trailer_details}
 	<section
 		id="media"
-		class="text-skin-inverted xl:mt-5 bg-no-repeat bg-right-top bg-contain md:bg-cover md:rounded-2xl"
+		class="bg-right-top bg-no-repeat bg-contain text-skin-inverted xl:mt-5 md:bg-cover md:rounded-2xl"
 		style="background-image: url({IMAGE_API}original/{movie_details.backdrop_path})"
 	>
 		<div
@@ -39,16 +39,16 @@
 			>
 				<div class="col-start-1 col-end-2 ">
 					<img
-						class="h-96 w-64 md:h-120 md:w-80 overflow-hidden rounded-2xl mx-auto"
+						class="w-64 mx-auto overflow-hidden h-96 md:h-120 md:w-80 rounded-2xl"
 						src={movie_details.poster_path
 							? IMAGE_API + 'w500' + movie_details.poster_path
 							: '/default.jpg'}
 						alt="movie poster"
 					/>
 				</div>
-				<div class="md:col-start-2 md:col-end-5 flex flex-wrap content-start md:pl-10">
-					<div class="mt-6 md:mt-0 w-full flex flex-wrap">
-						<h4 class="md:flex w-full md:text-4xl">
+				<div class="flex flex-wrap content-start md:col-start-2 md:col-end-5 md:pl-10">
+					<div class="flex flex-wrap w-full mt-6 md:mt-0">
+						<h4 class="w-full md:flex md:text-4xl">
 							{movie_details.title}
 							<span class="ml-1 text-lg md:text-4xl text-skin-inverted">
 								{movie_details.release_date ? movie_details.release_date.substring(0, 4) : ''}
@@ -56,7 +56,7 @@
 						</h4>
 						{#if movie_details.vote_average}
 							<div
-								class="bg-transparent inline-flex align-center justify-center transform -translate-x-5 scale-60"
+								class="inline-flex justify-center transform -translate-x-5 bg-transparent align-center scale-60"
 							>
 								<ProgressBar progress={movie_details.vote_average} />
 							</div>
@@ -83,12 +83,12 @@
 						</div>
 					</div>
 					<div
-						class="mb-1 w-full flex flex-wrap justify-center md:justify-start md:flex-nowrap md:overflow-y-hidden relative"
+						class="relative flex flex-wrap justify-center w-full mb-1 md:justify-start md:flex-nowrap md:overflow-y-hidden"
 					>
 						{#if trailer_details.length > 0}
 							{#each trailer_details as trailer}
 								<div
-									class="w-56 flex-shrink-0 pl-2 cursor-pointer hover:opacity-80"
+									class="flex-shrink-0 w-56 pl-2 cursor-pointer hover:opacity-80"
 									on:click={() => showModal(trailer.key, trailer.site)}
 									title={trailer.name}
 									use:tooltip
@@ -96,7 +96,7 @@
 									<img src={`https://img.youtube.com/vi/${trailer.key}/0.jpg`} alt={trailer.name} />
 								</div>
 							{/each}
-							<!-- <p class="flex justify-center ml-4 text-2xl items-center">Play Trailer</p> -->
+							<!-- <p class="flex items-center justify-center ml-4 text-2xl">Play Trailer</p> -->
 						{:else}
 							<div class="flex pl-5">
 								<p class="flex justify-center ml-4">No Trailer Available</p>
@@ -105,7 +105,7 @@
 					</div>
 					<div class="w-full">
 						<div class="text-lg italic opacity-70">{movie_details.tagline}</div>
-						<h4 class="my-2 w-full font-semibold">Overview</h4>
+						<h4 class="w-full my-2 font-semibold">Overview</h4>
 						<div class="overview-details">{movie_details.overview}</div>
 					</div>
 				</div>
@@ -113,7 +113,7 @@
 		</div>
 	</section>
 
-	<Cast {cast} />
+	<Cast {cast_details} />
 	<Modal bind:this={modal} />
 {:else}
 	<Spinner />
