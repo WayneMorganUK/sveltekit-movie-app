@@ -7,10 +7,10 @@
 	};
 </script>
 
-<button class="text-skin-inverted" on:click={toggleTheme}>
+<button id="night-mode-label" class="text-skin-inverted" on:click={toggleTheme}>
 	<div
 		class="flex justify-center w-8 h-8 mr-2 align-middle border-2 rounded-full border-skin-border focus:outline-none"
-		aria-label="Toggle Light and Dark mode"
+		aria-labelledby="night-mode-label"
 	>
 		{#if $theme === Theme.Dark}
 			<span> <i class="text-yellow-400 fa fa-sun-o" id="toggle-switch" /></span>

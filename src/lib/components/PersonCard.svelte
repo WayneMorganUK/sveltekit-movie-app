@@ -6,7 +6,7 @@
 <section id="person-card" class="w-44 xl:h-108 xl:w-60 my-0.5 xl:my-2 bg-skin-bg xl:rounded-lg">
 	<a href={`/person/${datum.id}`} class="top-0 right-0 text-skin-base xl:rounded-lg">
 		<img
-			class="h-64 oject-cover w-44 xl:w-60 xl:h-90 xl:rounded-t-lg text-skin-base"
+			class="oject-cover w-44 h-[264px] xl:w-60 xl:h-90 xl:rounded-t-lg  text-skin-muted "
 			src={datum.profile_path === null ? '/person.svg' : IMAGE_API + datum.profile_path}
 			alt={datum.name}
 		/>

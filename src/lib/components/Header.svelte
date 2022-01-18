@@ -11,11 +11,12 @@
 	}
 </script>
 
-<header class="w-full z-50 fixed top-0 h-12 bg-skin-primary">
-	<div class="h-12 max-w-7xl mx-auto flex justify-between pl-2 md:pl-5 lg:pl-7 pr-1 items-center  ">
+<header class="fixed top-0 z-50 w-full h-12 bg-skin-primary">
+	<div class="flex items-center justify-between h-12 pl-2 pr-1 mx-auto max-w-7xl md:pl-5 lg:pl-7 ">
 		<div class="flex flex-row items-center">
 			<button
 				on:click|preventDefault={toggleHome}
+				aria-label="home"
 				class="text-3xl text-skin-inverted hover:text-skin-selected"
 				href="/"
 				><i class="fa fa-home" />
