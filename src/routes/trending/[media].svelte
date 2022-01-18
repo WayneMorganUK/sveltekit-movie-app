@@ -8,14 +8,13 @@
 		current_page.set(1);
 		media_type.set(params.media as MediaType);
 		const res = await (
-			await fetch('../../api/postData', {
+			await fetch('../../api/getShow', {
 				headers: {
 					'Content-Type': 'application/json'
 				},
 				method: 'POST',
 				body: JSON.stringify({
 					media: params.media,
-					api_ref: 'show',
 					page: '1'
 				})
 			})

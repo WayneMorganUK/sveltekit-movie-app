@@ -4,13 +4,12 @@
 	 */
 	export async function load({ fetch, params }) {
 		const res = await (
-			await fetch('../../api/postData', {
+			await fetch('../../api/getSeason', {
 				headers: {
 					'Content-Type': 'application/json'
 				},
 				method: 'POST',
 				body: JSON.stringify({
-					api_ref: 'season',
 					id: params.id,
 					season_number: params.season_number
 				})

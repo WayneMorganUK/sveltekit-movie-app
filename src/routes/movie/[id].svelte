@@ -6,13 +6,12 @@
 	export async function load({ fetch, params }) {
 		media_type.set('movie');
 		const res = await (
-			await fetch('../api/postData', {
+			await fetch('../api/getMovie', {
 				headers: {
 					'Content-Type': 'application/json'
 				},
 				method: 'POST',
 				body: JSON.stringify({
-					api_ref: 'show_detail',
 					media: 'movie',
 					id: params.id
 				})
@@ -21,13 +20,12 @@
 		const movie_details = await res.res;
 
 		const trailer = await (
-			await fetch('../api/postData', {
+			await fetch('../api/getTrailer', {
 				headers: {
 					'Content-Type': 'application/json'
 				},
 				method: 'POST',
 				body: JSON.stringify({
-					api_ref: 'trailer',
 					media: 'movie',
 					id: params.id
 				})

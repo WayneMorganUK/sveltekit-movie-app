@@ -6,14 +6,13 @@
 	export async function load({ fetch }) {
 		data.set(undefined);
 		current_page.set(1);
-		const res = await fetch('/api/postData', {
+		const res = await fetch('/api/getShow', {
 			headers: {
 				'Content-Type': 'application/json'
 			},
 			method: 'POST',
 			body: JSON.stringify({
 				media: 'movie',
-				api_ref: 'show',
 				page: '1'
 			})
 		});

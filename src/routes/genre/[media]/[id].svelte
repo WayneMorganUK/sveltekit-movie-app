@@ -10,13 +10,12 @@
 		const genres = params.id;
 		media_type.set(params.media);
 		const res = await (
-			await fetch('../../api/postData', {
+			await fetch('../../api/getShowGenre', {
 				headers: {
 					'Content-Type': 'application/json'
 				},
 				method: 'POST',
 				body: JSON.stringify({
-					api_ref: 'show_genres',
 					media: params.media,
 					genre: genres,
 					page: '1'
@@ -42,4 +41,6 @@
 	$selected = null;
 </script>
 
-<MainSection {total_pages} {genres} />
+{#key $data}
+	<MainSection {total_pages} {genres} />
+{/key}

@@ -1,0 +1,278 @@
+{
+  ".svelte-kit/build/app.js": {
+    "file": "app.js",
+    "src": ".svelte-kit/build/app.js",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js"
+    ]
+  },
+  "src/routes/theme.ts": {
+    "file": "entries/endpoints/theme.ts.js",
+    "src": "src/routes/theme.ts",
+    "isEntry": true,
+    "imports": [
+      "_theme-55fe6b69.js",
+      "_stores-bf708f99.js",
+      "_index-bac2f3ba.js",
+      "_index-d650715d.js"
+    ]
+  },
+  "src/routes/api/getMovieGenres.ts": {
+    "file": "entries/endpoints/api/getMovieGenres.ts.js",
+    "src": "src/routes/api/getMovieGenres.ts",
+    "isEntry": true
+  },
+  "src/routes/api/getTvNetworks.ts": {
+    "file": "entries/endpoints/api/getTvNetworks.ts.js",
+    "src": "src/routes/api/getTvNetworks.ts",
+    "isEntry": true
+  },
+  "src/routes/api/getShowGenre.ts": {
+    "file": "entries/endpoints/api/getShowGenre.ts.js",
+    "src": "src/routes/api/getShowGenre.ts",
+    "isEntry": true
+  },
+  "src/routes/api/getKnownFor.ts": {
+    "file": "entries/endpoints/api/getKnownFor.ts.js",
+    "src": "src/routes/api/getKnownFor.ts",
+    "isEntry": true
+  },
+  "src/routes/api/getTvGenres.ts": {
+    "file": "entries/endpoints/api/getTvGenres.ts.js",
+    "src": "src/routes/api/getTvGenres.ts",
+    "isEntry": true
+  },
+  "src/routes/api/getEpisode.ts": {
+    "file": "entries/endpoints/api/getEpisode.ts.js",
+    "src": "src/routes/api/getEpisode.ts",
+    "isEntry": true
+  },
+  "src/routes/api/getTrailer.ts": {
+    "file": "entries/endpoints/api/getTrailer.ts.js",
+    "src": "src/routes/api/getTrailer.ts",
+    "isEntry": true
+  },
+  "src/routes/api/getPerson.ts": {
+    "file": "entries/endpoints/api/getPerson.ts.js",
+    "src": "src/routes/api/getPerson.ts",
+    "isEntry": true
+  },
+  "src/routes/api/getSearch.ts": {
+    "file": "entries/endpoints/api/getSearch.ts.js",
+    "src": "src/routes/api/getSearch.ts",
+    "isEntry": true
+  },
+  "src/routes/api/getSeason.ts": {
+    "file": "entries/endpoints/api/getSeason.ts.js",
+    "src": "src/routes/api/getSeason.ts",
+    "isEntry": true
+  },
+  "src/routes/api/getMovie.ts": {
+    "file": "entries/endpoints/api/getMovie.ts.js",
+    "src": "src/routes/api/getMovie.ts",
+    "isEntry": true
+  },
+  "src/routes/api/postData.ts": {
+    "file": "entries/endpoints/api/postData.ts.js",
+    "src": "src/routes/api/postData.ts",
+    "isEntry": true
+  },
+  "src/routes/api/getCast.ts": {
+    "file": "entries/endpoints/api/getCast.ts.js",
+    "src": "src/routes/api/getCast.ts",
+    "isEntry": true
+  },
+  "src/routes/api/getShow.ts": {
+    "file": "entries/endpoints/api/getShow.ts.js",
+    "src": "src/routes/api/getShow.ts",
+    "isEntry": true
+  },
+  "src/routes/__layout.svelte": {
+    "file": "entries/pages/__layout.svelte.js",
+    "src": "src/routes/__layout.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js",
+      "_store-56c5f052.js",
+      "_theme-55fe6b69.js",
+      "_index-d650715d.js",
+      "_stores-bf708f99.js"
+    ],
+    "css": [
+      "assets/entries/pages/__layout.svelte-ce7eb158.css"
+    ]
+  },
+  "src/routes/__error.svelte": {
+    "file": "entries/pages/__error.svelte.js",
+    "src": "src/routes/__error.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js"
+    ],
+    "css": [
+      "assets/entries/pages/__error.svelte-29d8f8cb.css"
+    ]
+  },
+  "src/routes/index.svelte": {
+    "file": "entries/pages/index.svelte.js",
+    "src": "src/routes/index.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js",
+      "_store-56c5f052.js",
+      "_MainSection-8a1d1742.js",
+      "_index-d650715d.js",
+      "_ProgressBar-fae5f0ef.js"
+    ]
+  },
+  "src/routes/NotFound.svelte": {
+    "file": "entries/pages/NotFound.svelte.js",
+    "src": "src/routes/NotFound.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js"
+    ]
+  },
+  "src/routes/trending/[media].svelte": {
+    "file": "entries/pages/trending/_media_.svelte.js",
+    "src": "src/routes/trending/[media].svelte",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js",
+      "_store-56c5f052.js",
+      "_MainSection-8a1d1742.js",
+      "_index-d650715d.js",
+      "_ProgressBar-fae5f0ef.js"
+    ]
+  },
+  "src/routes/episode/[id]/[season_number]/[episode_number].svelte": {
+    "file": "entries/pages/episode/_id_/_season_number_/_episode_number_.svelte.js",
+    "src": "src/routes/episode/[id]/[season_number]/[episode_number].svelte",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js"
+    ]
+  },
+  "src/routes/seasons/[id]/[season_number].svelte": {
+    "file": "entries/pages/seasons/_id_/_season_number_.svelte.js",
+    "src": "src/routes/seasons/[id]/[season_number].svelte",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js",
+      "_stores-bf708f99.js"
+    ]
+  },
+  "src/routes/person/[id].svelte": {
+    "file": "entries/pages/person/_id_.svelte.js",
+    "src": "src/routes/person/[id].svelte",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js",
+      "_store-56c5f052.js",
+      "_index-d650715d.js"
+    ]
+  },
+  "src/routes/search/[id].svelte": {
+    "file": "entries/pages/search/_id_.svelte.js",
+    "src": "src/routes/search/[id].svelte",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js",
+      "_store-56c5f052.js",
+      "_MainSection-8a1d1742.js",
+      "_stores-bf708f99.js",
+      "_index-d650715d.js",
+      "_ProgressBar-fae5f0ef.js"
+    ]
+  },
+  "src/routes/genre/[media]/[id].svelte": {
+    "file": "entries/pages/genre/_media_/_id_.svelte.js",
+    "src": "src/routes/genre/[media]/[id].svelte",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js",
+      "_store-56c5f052.js",
+      "_MainSection-8a1d1742.js",
+      "_index-d650715d.js",
+      "_ProgressBar-fae5f0ef.js"
+    ]
+  },
+  "src/routes/movie/[id].svelte": {
+    "file": "entries/pages/movie/_id_.svelte.js",
+    "src": "src/routes/movie/[id].svelte",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js",
+      "_store-56c5f052.js",
+      "_ProgressBar-fae5f0ef.js",
+      "_Cast-498cb0f9.js",
+      "_index-d650715d.js"
+    ]
+  },
+  "src/routes/tv/[id].svelte": {
+    "file": "entries/pages/tv/_id_.svelte.js",
+    "src": "src/routes/tv/[id].svelte",
+    "isEntry": true,
+    "imports": [
+      "_index-bac2f3ba.js",
+      "_store-56c5f052.js",
+      "_ProgressBar-fae5f0ef.js",
+      "_Cast-498cb0f9.js",
+      "_stores-bf708f99.js",
+      "_index-d650715d.js"
+    ]
+  },
+  "_index-bac2f3ba.js": {
+    "file": "chunks/index-bac2f3ba.js"
+  },
+  "_theme-55fe6b69.js": {
+    "file": "chunks/theme-55fe6b69.js",
+    "imports": [
+      "_stores-bf708f99.js",
+      "_index-d650715d.js"
+    ]
+  },
+  "_stores-bf708f99.js": {
+    "file": "chunks/stores-bf708f99.js",
+    "imports": [
+      "_index-bac2f3ba.js"
+    ]
+  },
+  "_index-d650715d.js": {
+    "file": "chunks/index-d650715d.js",
+    "imports": [
+      "_index-bac2f3ba.js"
+    ]
+  },
+  "_store-56c5f052.js": {
+    "file": "chunks/store-56c5f052.js",
+    "imports": [
+      "_index-d650715d.js"
+    ]
+  },
+  "_MainSection-8a1d1742.js": {
+    "file": "chunks/MainSection-8a1d1742.js",
+    "imports": [
+      "_index-bac2f3ba.js",
+      "_store-56c5f052.js",
+      "_ProgressBar-fae5f0ef.js"
+    ]
+  },
+  "_ProgressBar-fae5f0ef.js": {
+    "file": "chunks/ProgressBar-fae5f0ef.js",
+    "imports": [
+      "_index-bac2f3ba.js"
+    ]
+  },
+  "_Cast-498cb0f9.js": {
+    "file": "chunks/Cast-498cb0f9.js",
+    "imports": [
+      "_index-bac2f3ba.js",
+      "_store-56c5f052.js"
+    ],
+    "css": [
+      "assets/Cast-f9a61d1d.css"
+    ]
+  }
+}

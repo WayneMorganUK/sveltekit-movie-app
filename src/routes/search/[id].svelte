@@ -7,13 +7,12 @@
 	export async function load({ fetch, params }) {
 		current_page.set(1);
 		const res = await (
-			await fetch('../api/postData', {
+			await fetch('../api/getSearch', {
 				headers: {
 					'Content-Type': 'application/json'
 				},
 				method: 'POST',
 				body: JSON.stringify({
-					api_ref: 'search',
 					media: get(media_type),
 					query: params.id,
 					page: '1'
@@ -38,4 +37,6 @@
 	import { page } from '$app/stores';
 </script>
 
-<MainSection {total_pages} {searching} />
+{#key $data}
+	<MainSection {total_pages} {searching} />
+{/key}

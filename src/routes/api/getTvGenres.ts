@@ -1,10 +1,11 @@
 const api = import.meta.env.VITE_API_KEY
-const api_url = `https://api.themoviedb.org/3/genre/tv/list?api_key=${api}&language-en-GB`;
+const GENRES_TV_API = `https://api.themoviedb.org/3/genre/tv/list?api_key=${api}&language-en-GB`;
 
-export async function get(): Promise<{ body: string }> {
+export const get = async () => {
 	try {
-		const response = await (await fetch(api_url)).json()
-		const tv_genres = response.genres
+		const response: Response = await fetch(GENRES_TV_API);
+		const response_json: Media = await response.json();
+		const tv_genres = response_json.genres
 		return {
 			body: JSON.stringify({ tv_genres })
 		}
