@@ -1,6 +1,6 @@
 const plugin = require('tailwindcss/plugin');
 const config = {
-	content: ['./src/**/*.{html,js,svelte,ts}'],
+	content: ['./src/**/*.{html,js,svelte,ts,svg}'],
 	theme: {
 		extend: {
 			borderColor: {
@@ -9,7 +9,13 @@ const config = {
 				}
 			},
 			fill: {
-				current: 'currentColor'
+				base: 'var(--color-text-base)',
+				inverted: 'var(--color-text-inverted)',
+				selected: 'var(--color-text-selected)'
+			},
+			stroke: {
+				inverted: 'var(--color-text-inverted)',
+				selected: 'var(--color-text-selected)'
 			},
 			textColor: {
 				skin: {
