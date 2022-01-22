@@ -1,0 +1,13 @@
+import { w as writable } from "./index-d650715d.js";
+const current_page = writable(1);
+const trailer_key = writable("xyz");
+const video_site = writable("");
+const media_type = writable("movie");
+const selected = writable(null);
+const show_name = writable("");
+const season_count = writable(0);
+const show_id = writable(0);
+const data = writable([]);
+const tv_genres = writable([]);
+const movie_genres = writable([]);
+export { media_type as a, trailer_key as b, current_page as c, data as d, show_id as e, season_count as f, show_name as g, movie_genres as m, selected as s, tv_genres as t, video_site as v };
