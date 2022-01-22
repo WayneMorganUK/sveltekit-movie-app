@@ -6,4 +6,4 @@ command = "npm run build"
  framework = "svelte-kit" 
 
 [functions]
-  node_bundler = "esbuild
+  node_bundler = "esbuild"
