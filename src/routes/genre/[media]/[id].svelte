@@ -10,7 +10,7 @@
 		const genres = params.id;
 		media_type.set(params.media);
 		const res = await (
-			await fetch('../../api/getShowGenre', {
+			await fetch('../../api/postShowGenre', {
 				headers: {
 					'Content-Type': 'application/json'
 				},

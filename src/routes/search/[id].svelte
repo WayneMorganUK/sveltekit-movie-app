@@ -7,7 +7,7 @@
 	export async function load({ fetch, params }) {
 		current_page.set(1);
 		const res = await (
-			await fetch('../api/getSearch', {
+			await fetch('../api/postSearch', {
 				headers: {
 					'Content-Type': 'application/json'
 				},

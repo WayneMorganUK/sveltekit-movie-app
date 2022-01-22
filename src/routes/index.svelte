@@ -6,7 +6,7 @@
 	export async function load({ fetch }) {
 		data.set(undefined);
 		current_page.set(1);
-		const res = await fetch('/api/getShow', {
+		const res = await fetch('/api/postShow', {
 			headers: {
 				'Content-Type': 'application/json'
 			},

@@ -4,7 +4,7 @@
 	 */
 	export async function load({ fetch, params }) {
 		const res = await (
-			await fetch('../../api/getSeason', {
+			await fetch('../../api/postSeason', {
 				headers: {
 					'Content-Type': 'application/json'
 				},

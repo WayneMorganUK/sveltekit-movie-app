@@ -2,9 +2,8 @@ import type { RequestHandler } from '@sveltejs/kit'
 
 import { isTheme } from '$lib/stores/theme'
 
-// PUT /theme
-export const put: RequestHandler = async ({ body }) => {
-    const theme = body.toString()
+export const put: RequestHandler = async ({ request }) => {
+    const theme = await request.text()
 
     if (!isTheme(theme)) {
         return {
@@ -20,7 +19,6 @@ export const put: RequestHandler = async ({ body }) => {
     }
 }
 
-// DELETE /theme
 export const del: RequestHandler = async () => ({
     status: 204,
     headers: {

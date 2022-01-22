@@ -12,6 +12,7 @@ export const isTheme = (theme: string): theme is Theme =>
     Object.values(Theme).includes(theme as Theme)
 
 export const theme = derived<SessionStore, Theme>(session, ($session, set) => {
+    console.log('session theme', $session.theme)
     if ($session.theme) {
         set($session.theme)
     } else if (browser) {

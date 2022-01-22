@@ -1,36 +1,43 @@
-/**
- * @param {Record<string, string | string[] | undefined>} headers
- * @param {string} key
- * @returns {string | undefined}
- * @throws {Error}
- */
-function get_single_valued_header(headers, key) {
-	const value = headers[key];
-	if (Array.isArray(value)) {
-		if (value.length === 0) {
-			return undefined;
+/** @param {Partial<import('types/helper').ResponseHeaders> | undefined} object */
+function to_headers(object) {
+	const headers = new Headers();
+
+	if (object) {
+		for (const key in object) {
+			const value = object[key];
+			if (!value) continue;
+
+			if (typeof value === 'string') {
+				headers.set(key, value);
+			} else {
+				value.forEach((value) => {
+					headers.append(key, value);
+				});
+			}
 		}
-		if (value.length > 1) {
-			throw new Error(
-				`Multiple headers provided for ${key}. Multiple may be provided only for set-cookie`
-			);
-		}
-		return value[0];
 	}
-	return value;
+
+	return headers;
+}
+
+/**
+ * Hash using djb2
+ * @param {import('types/hooks').StrictBody} value
+ */
+function hash(value) {
+	let hash = 5381;
+	let i = value.length;
+
+	if (typeof value === 'string') {
+		while (i) hash = (hash * 33) ^ value.charCodeAt(--i);
+	} else {
+		while (i) hash = (hash * 33) ^ value[--i];
+	}
+
+	return (hash >>> 0).toString(36);
 }
 
 /** @param {Record<string, any>} obj */
-function lowercase_keys(obj) {
-	/** @type {Record<string, any>} */
-	const clone = {};
-
-	for (const key in obj) {
-		clone[key.toLowerCase()] = obj[key];
-	}
-
-	return clone;
-}
 
 /** @param {Record<string, string>} params */
 function decode_params(params) {
@@ -56,11 +63,9 @@ function decode_params(params) {
 
 /** @param {string} body */
 function error(body) {
-	return {
-		status: 500,
-		body,
-		headers: {}
-	};
+	return new Response(body, {
+		status: 500
+	});
 }
 
 /** @param {unknown} s */
@@ -89,16 +94,16 @@ function is_text(content_type) {
 }
 
 /**
- * @param {import('types/hooks').ServerRequest} request
+ * @param {import('types/hooks').RequestEvent} event
  * @param {import('types/internal').SSREndpoint} route
  * @param {RegExpExecArray} match
- * @returns {Promise<import('types/hooks').ServerResponse | undefined>}
+ * @returns {Promise<Response | undefined>}
  */
-async function render_endpoint(request, route, match) {
+async function render_endpoint(event, route, match) {
 	const mod = await route.load();
 
 	/** @type {import('types/endpoint').RequestHandler} */
-	const handler = mod[request.method.toLowerCase().replace('delete', 'del')]; // 'delete' is a reserved word
+	const handler = mod[event.request.method.toLowerCase().replace('delete', 'del')]; // 'delete' is a reserved word
 
 	if (!handler) {
 		return;
@@ -107,10 +112,10 @@ async function render_endpoint(request, route, match) {
 	// we're mutating `request` so that we don't have to do { ...request, params }
 	// on the next line, since that breaks the getters that replace path, query and
 	// origin. We could revert that once we remove the getters
-	request.params = route.params ? decode_params(route.params(match)) : {};
+	event.params = route.params ? decode_params(route.params(match)) : {};
 
-	const response = await handler(request);
-	const preface = `Invalid response from route ${request.url.pathname}`;
+	const response = await handler(event);
+	const preface = `Invalid response from route ${event.url.pathname}`;
 
 	if (typeof response !== 'object') {
 		return error(`${preface}: expected an object, got ${typeof response}`);
@@ -120,10 +125,11 @@ async function render_endpoint(request, route, match) {
 		return;
 	}
 
-	let { status = 200, body, headers = {} } = response;
+	const { status = 200, body = {} } = response;
+	const headers =
+		response.headers instanceof Headers ? response.headers : to_headers(response.headers);
 
-	headers = lowercase_keys(headers);
-	const type = get_single_valued_header(headers, 'content-type');
+	const type = headers.get('content-type');
 
 	if (!is_text(type) && !(body instanceof Uint8Array || is_string(body))) {
 		return error(
@@ -134,19 +140,45 @@ async function render_endpoint(request, route, match) {
 	/** @type {import('types/hooks').StrictBody} */
 	let normalized_body;
 
-	// ensure the body is an object
-	if (
-		(typeof body === 'object' || typeof body === 'undefined') &&
-		!(body instanceof Uint8Array) &&
-		(!type || type.startsWith('application/json'))
-	) {
-		headers = { ...headers, 'content-type': 'application/json; charset=utf-8' };
-		normalized_body = JSON.stringify(typeof body === 'undefined' ? {} : body);
+	if (is_pojo(body) && (!type || type.startsWith('application/json'))) {
+		headers.set('content-type', 'application/json; charset=utf-8');
+		normalized_body = JSON.stringify(body);
 	} else {
 		normalized_body = /** @type {import('types/hooks').StrictBody} */ (body);
 	}
 
-	return { status, body: normalized_body, headers };
+	if (
+		(typeof normalized_body === 'string' || normalized_body instanceof Uint8Array) &&
+		!headers.has('etag')
+	) {
+		const cache_control = headers.get('cache-control');
+		if (!cache_control || !/(no-store|immutable)/.test(cache_control)) {
+			headers.set('etag', `"${hash(normalized_body)}"`);
+		}
+	}
+
+	return new Response(normalized_body, {
+		status,
+		headers
+	});
+}
+
+/** @param {any} body */
+function is_pojo(body) {
+	if (typeof body !== 'object') return false;
+
+	if (body) {
+		if (body instanceof Uint8Array) return false;
+
+		// body could be a node Readable, but we don't want to import
+		// node built-ins, so we use duck typing
+		if (body._readableState && body._writableState && body._events) return false;
+
+		// similarly, it could be a web ReadableStream
+		if (body[Symbol.toStringTag] === 'ReadableStream') return false;
+	}
+
+	return true;
 }
 
 var chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$';
@@ -439,23 +471,6 @@ function coalesce_to_error(err) {
 		: new Error(JSON.stringify(err));
 }
 
-/**
- * Hash using djb2
- * @param {import('types/hooks').StrictBody} value
- */
-function hash(value) {
-	let hash = 5381;
-	let i = value.length;
-
-	if (typeof value === 'string') {
-		while (i) hash = (hash * 33) ^ value.charCodeAt(--i);
-	} else {
-		while (i) hash = (hash * 33) ^ value[--i];
-	}
-
-	return (hash >>> 0).toString(36);
-}
-
 /** @type {Record<string, string>} */
 const escape_json_string_in_html_dict = {
 	'"': '\\"',
@@ -671,6 +686,12 @@ async function render_response({
 
 	const inlined_style = Array.from(styles.values()).join('\n');
 
+	if (state.prerender) {
+		if (maxage) {
+			head += `<meta http-equiv="cache-control" content="max-age=${maxage}">`;
+		}
+	}
+
 	if (options.amp) {
 		head += `
 		<style amp-boilerplate>body{-webkit-animation:-amp-start 8s steps(1,end) 0s 1 normal both;-moz-animation:-amp-start 8s steps(1,end) 0s 1 normal both;-ms-animation:-amp-start 8s steps(1,end) 0s 1 normal both;animation:-amp-start 8s steps(1,end) 0s 1 normal both}@-webkit-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-moz-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-ms-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-o-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}</style>
@@ -691,8 +712,8 @@ async function render_response({
 		}
 		// prettier-ignore
 		head += Array.from(css)
-				.map((dep) => `\n\t<link${styles.has(dep) ? ' disabled' : ''} rel="stylesheet" href="${options.prefix + dep}">`)
-				.join('');
+			.map((dep) => `\n\t<link${styles.has(dep) ? ' disabled media="(max-width: 0)"' : ''} rel="stylesheet" href="${options.prefix + dep}">`)
+			.join('');
 
 		if (page_config.router || page_config.hydrate) {
 			head += Array.from(js)
@@ -723,12 +744,7 @@ async function render_response({
 						params: ${devalue(params)}
 					}` : 'null'}
 				});
-			</script>${options.service_worker ? `
-			<script>
-				if ('serviceWorker' in navigator) {
-					navigator.serviceWorker.register('${options.service_worker}');
-				}
-			</script>` : ''}`;
+			</script>`;
 
 			body += serialized_data
 				.map(({ url, body, json }) => {
@@ -741,34 +757,41 @@ async function render_response({
 				})
 				.join('\n\n\t');
 		}
-	}
 
-	/** @type {import('types/helper').ResponseHeaders} */
-	const headers = {
-		'content-type': 'text/html'
-	};
-
-	if (maxage) {
-		headers['cache-control'] = `${is_private ? 'private' : 'public'}, max-age=${maxage}`;
-	}
-
-	if (!options.floc) {
-		headers['permissions-policy'] = 'interest-cohort=()';
+		if (options.service_worker) {
+			// always include service worker unless it's turned off explicitly
+			head += `
+			<script>
+				if ('serviceWorker' in navigator) {
+					navigator.serviceWorker.register('${options.service_worker}');
+				}
+			</script>`;
+		}
 	}
 
 	const segments = url.pathname.slice(options.paths.base.length).split('/').slice(2);
 	const assets =
 		options.paths.assets || (segments.length > 0 ? segments.map(() => '..').join('/') : '.');
 
-	return {
+	const html = options.template({ head, body, assets });
+
+	const headers = new Headers({
+		'content-type': 'text/html',
+		etag: `"${hash(html)}"`
+	});
+
+	if (maxage) {
+		headers.set('cache-control', `${is_private ? 'private' : 'public'}, max-age=${maxage}`);
+	}
+
+	if (!options.floc) {
+		headers.set('permissions-policy', 'interest-cohort=()');
+	}
+
+	return new Response(html, {
 		status,
-		headers,
-		body: options.template({
-			head,
-			body,
-			assets
-		})
-	};
+		headers
+	});
 }
 
 /**
@@ -906,7 +929,7 @@ function is_root_relative(path) {
 
 /**
  * @param {{
- *   request: import('types/hooks').ServerRequest;
+ *   event: import('types/hooks').RequestEvent;
  *   options: import('types/internal').SSRRenderOptions;
  *   state: import('types/internal').SSRRenderState;
  *   route: import('types/internal').SSRPage | null;
@@ -922,7 +945,7 @@ function is_root_relative(path) {
  * @returns {Promise<import('./types').Loaded | undefined>} undefined for fallthrough
  */
 async function load_node({
-	request,
+	event,
 	options,
 	state,
 	route,
@@ -993,7 +1016,7 @@ async function load_node({
 
 				opts.headers = new Headers(opts.headers);
 
-				const resolved = resolve(request.url.pathname, requested.split('?')[0]);
+				const resolved = resolve(event.url.pathname, requested.split('?')[0]);
 
 				let response;
 
@@ -1029,12 +1052,15 @@ async function load_node({
 					if (opts.credentials !== 'omit') {
 						uses_credentials = true;
 
-						if (request.headers.cookie) {
-							opts.headers.set('cookie', request.headers.cookie);
+						const cookie = event.request.headers.get('cookie');
+						const authorization = event.request.headers.get('authorization');
+
+						if (cookie) {
+							opts.headers.set('cookie', cookie);
 						}
 
-						if (request.headers.authorization && !opts.headers.has('authorization')) {
-							opts.headers.set('authorization', request.headers.authorization);
+						if (authorization && !opts.headers.has('authorization')) {
+							opts.headers.set('authorization', authorization);
 						}
 					}
 
@@ -1047,12 +1073,7 @@ async function load_node({
 					}
 
 					const rendered = await respond(
-						{
-							url: new URL(requested, request.url),
-							method: opts.method || 'GET',
-							headers: Object.fromEntries(opts.headers),
-							rawBody: opts.body == null ? null : new TextEncoder().encode(opts.body)
-						},
+						new Request(new URL(requested, event.url).href, opts),
 						options,
 						{
 							fetched: requested,
@@ -1065,17 +1086,11 @@ async function load_node({
 							state.prerender.dependencies.set(relative, rendered);
 						}
 
-						// Set-Cookie must be filtered out (done below) and that's the only header value that
-						// can be an array so we know we have only simple values
-						// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie
-						response = new Response(rendered.body, {
-							status: rendered.status,
-							headers: /** @type {Record<string, string>} */ (rendered.headers)
-						});
+						response = rendered;
 					} else {
 						// we can't load the endpoint from our own manifest,
 						// so we need to make an actual HTTP request
-						return fetch(new URL(requested, request.url).href, {
+						return fetch(new URL(requested, event.url).href, {
 							method: opts.method || 'GET',
 							headers: opts.headers
 						});
@@ -1098,11 +1113,13 @@ async function load_node({
 					// ports do not affect the resolution
 					// leading dot prevents mydomain.com matching domain.com
 					if (
-						`.${new URL(requested).hostname}`.endsWith(`.${request.url.hostname}`) &&
+						`.${new URL(requested).hostname}`.endsWith(`.${event.url.hostname}`) &&
 						opts.credentials !== 'omit'
 					) {
 						uses_credentials = true;
-						opts.headers.set('cookie', request.headers.cookie);
+
+						const cookie = event.request.headers.get('cookie');
+						if (cookie) opts.headers.set('cookie', cookie);
 					}
 
 					const external_request = new Request(requested, /** @type {RequestInit} */ (opts));
@@ -1211,7 +1228,7 @@ async function load_node({
 
 /**
  * @param {{
- *   request: import('types/hooks').ServerRequest;
+ *   event: import('types/hooks').RequestEvent;
  *   options: SSRRenderOptions;
  *   state: SSRRenderState;
  *   $session: any;
@@ -1220,15 +1237,7 @@ async function load_node({
  *   ssr: boolean;
  * }} opts
  */
-async function respond_with_error({
-	request,
-	options,
-	state,
-	$session,
-	status,
-	error,
-	ssr
-}) {
+async function respond_with_error({ event, options, state, $session, status, error, ssr }) {
 	try {
 		const default_layout = await options.manifest._.nodes[0](); // 0 is always the root layout
 		const default_error = await options.manifest._.nodes[1](); // 1 is always the root error
@@ -1238,11 +1247,11 @@ async function respond_with_error({
 
 		const layout_loaded = /** @type {Loaded} */ (
 			await load_node({
-				request,
+				event,
 				options,
 				state,
 				route: null,
-				url: request.url, // TODO this is redundant, no?
+				url: event.url, // TODO this is redundant, no?
 				params,
 				node: default_layout,
 				$session,
@@ -1253,11 +1262,11 @@ async function respond_with_error({
 
 		const error_loaded = /** @type {Loaded} */ (
 			await load_node({
-				request,
+				event,
 				options,
 				state,
 				route: null,
-				url: request.url,
+				url: event.url,
 				params,
 				node: default_error,
 				$session,
@@ -1280,26 +1289,23 @@ async function respond_with_error({
 			status,
 			error,
 			branch: [layout_loaded, error_loaded],
-			url: request.url,
+			url: event.url,
 			params,
 			ssr
 		});
 	} catch (err) {
 		const error = coalesce_to_error(err);
 
-		options.handle_error(error, request);
+		options.handle_error(error, event);
 
-		return {
-			status: 500,
-			headers: {},
-			body: error.stack
-		};
+		return new Response(error.stack, {
+			status: 500
+		});
 	}
 }
 
 /**
  * @typedef {import('./types.js').Loaded} Loaded
- * @typedef {import('types/hooks').ServerResponse} ServerResponse
  * @typedef {import('types/internal').SSRNode} SSRNode
  * @typedef {import('types/internal').SSRRenderOptions} SSRRenderOptions
  * @typedef {import('types/internal').SSRRenderState} SSRRenderState
@@ -1307,7 +1313,7 @@ async function respond_with_error({
 
 /**
  * @param {{
- *   request: import('types/hooks').ServerRequest;
+ *   event: import('types/hooks').RequestEvent;
  *   options: SSRRenderOptions;
  *   state: SSRRenderState;
  *   $session: any;
@@ -1315,10 +1321,10 @@ async function respond_with_error({
  *   params: Record<string, string>;
  *   ssr: boolean;
  * }} opts
- * @returns {Promise<ServerResponse | undefined>}
+ * @returns {Promise<Response | undefined>}
  */
 async function respond$1(opts) {
-	const { request, options, state, $session, route, ssr } = opts;
+	const { event, options, state, $session, route, ssr } = opts;
 
 	/** @type {Array<SSRNode | undefined>} */
 	let nodes;
@@ -1332,7 +1338,7 @@ async function respond$1(opts) {
 				router: true
 			},
 			status: 200,
-			url: request.url,
+			url: event.url,
 			stuff: {}
 		});
 	}
@@ -1344,10 +1350,10 @@ async function respond$1(opts) {
 	} catch (err) {
 		const error = coalesce_to_error(err);
 
-		options.handle_error(error, request);
+		options.handle_error(error, event);
 
 		return await respond_with_error({
-			request,
+			event,
 			options,
 			state,
 			$session,
@@ -1365,10 +1371,9 @@ async function respond$1(opts) {
 	if (!leaf.prerender && state.prerender && !state.prerender.all) {
 		// if the page has `export const prerender = true`, continue,
 		// otherwise bail out at this point
-		return {
-			status: 204,
-			headers: {}
-		};
+		return new Response(undefined, {
+			status: 204
+		});
 	}
 
 	/** @type {Array<Loaded>} */
@@ -1396,7 +1401,7 @@ async function respond$1(opts) {
 				try {
 					loaded = await load_node({
 						...opts,
-						url: request.url,
+						url: event.url,
 						node,
 						stuff,
 						is_error: false
@@ -1408,12 +1413,12 @@ async function respond$1(opts) {
 
 					if (loaded.loaded.redirect) {
 						return with_cookies(
-							{
+							new Response(undefined, {
 								status: loaded.loaded.status,
 								headers: {
-									location: encodeURI(loaded.loaded.redirect)
+									location: loaded.loaded.redirect
 								}
-							},
+							}),
 							set_cookie_headers
 						);
 					}
@@ -1424,7 +1429,7 @@ async function respond$1(opts) {
 				} catch (err) {
 					const e = coalesce_to_error(err);
 
-					options.handle_error(e, request);
+					options.handle_error(e, event);
 
 					status = 500;
 					error = e;
@@ -1450,7 +1455,7 @@ async function respond$1(opts) {
 								const error_loaded = /** @type {import('./types').Loaded} */ (
 									await load_node({
 										...opts,
-										url: request.url,
+										url: event.url,
 										node: error_node,
 										stuff: node_loaded.stuff,
 										is_error: true,
@@ -1470,7 +1475,7 @@ async function respond$1(opts) {
 							} catch (err) {
 								const e = coalesce_to_error(err);
 
-								options.handle_error(e, request);
+								options.handle_error(e, event);
 
 								continue;
 							}
@@ -1482,7 +1487,7 @@ async function respond$1(opts) {
 					// for now just return regular error page
 					return with_cookies(
 						await respond_with_error({
-							request,
+							event,
 							options,
 							state,
 							$session,
@@ -1509,7 +1514,7 @@ async function respond$1(opts) {
 			await render_response({
 				...opts,
 				stuff,
-				url: request.url,
+				url: event.url,
 				page_config,
 				status,
 				error,
@@ -1520,7 +1525,7 @@ async function respond$1(opts) {
 	} catch (err) {
 		const error = coalesce_to_error(err);
 
-		options.handle_error(error, request);
+		options.handle_error(error, event);
 
 		return with_cookies(
 			await respond_with_error({
@@ -1552,41 +1557,41 @@ function get_page_config(leaf, options) {
 }
 
 /**
- * @param {ServerResponse} response
+ * @param {Response} response
  * @param {string[]} set_cookie_headers
  */
 function with_cookies(response, set_cookie_headers) {
 	if (set_cookie_headers.length) {
-		response.headers['set-cookie'] = set_cookie_headers;
+		set_cookie_headers.forEach((value) => {
+			response.headers.append('set-cookie', value);
+		});
 	}
 	return response;
 }
 
 /**
- * @param {import('types/hooks').ServerRequest} request
+ * @param {import('types/hooks').RequestEvent} event
  * @param {import('types/internal').SSRPage} route
  * @param {RegExpExecArray} match
  * @param {import('types/internal').SSRRenderOptions} options
  * @param {import('types/internal').SSRRenderState} state
  * @param {boolean} ssr
- * @returns {Promise<import('types/hooks').ServerResponse | undefined>}
+ * @returns {Promise<Response | undefined>}
  */
-async function render_page(request, route, match, options, state, ssr) {
+async function render_page(event, route, match, options, state, ssr) {
 	if (state.initiator === route) {
 		// infinite request cycle detected
-		return {
-			status: 404,
-			headers: {},
-			body: `Not found: ${request.url.pathname}`
-		};
+		return new Response(`Not found: ${event.url.pathname}`, {
+			status: 404
+		});
 	}
 
 	const params = route.params ? decode_params(route.params(match)) : {};
 
-	const $session = await options.hooks.getSession(request);
+	const $session = await options.hooks.getSession(event);
 
 	const response = await respond$1({
-		request,
+		event,
 		options,
 		state,
 		$session,
@@ -1604,290 +1609,119 @@ async function render_page(request, route, match, options, state, ssr) {
 		// rather than render the error page — which could lead to an
 		// infinite loop, if the `load` belonged to the root layout,
 		// we respond with a bare-bones 500
-		return {
-			status: 500,
-			headers: {},
-			body: `Bad request in load function: failed to fetch ${state.fetched}`
-		};
-	}
-}
-
-function read_only_form_data() {
-	/** @type {Map<string, string[]>} */
-	const map = new Map();
-
-	return {
-		/**
-		 * @param {string} key
-		 * @param {string} value
-		 */
-		append(key, value) {
-			const existing_values = map.get(key);
-			if (existing_values) {
-				existing_values.push(value);
-			} else {
-				map.set(key, [value]);
-			}
-		},
-
-		data: new ReadOnlyFormData(map)
-	};
-}
-
-class ReadOnlyFormData {
-	/** @type {Map<string, string[]>} */
-	#map;
-
-	/** @param {Map<string, string[]>} map */
-	constructor(map) {
-		this.#map = map;
-	}
-
-	/** @param {string} key */
-	get(key) {
-		const value = this.#map.get(key);
-		if (!value) {
-			return null;
-		}
-		return value[0];
-	}
-
-	/** @param {string} key */
-	getAll(key) {
-		return this.#map.get(key) || [];
-	}
-
-	/** @param {string} key */
-	has(key) {
-		return this.#map.has(key);
-	}
-
-	*[Symbol.iterator]() {
-		for (const [key, value] of this.#map) {
-			for (let i = 0; i < value.length; i += 1) {
-				yield [key, value[i]];
-			}
-		}
-	}
-
-	*entries() {
-		for (const [key, value] of this.#map) {
-			for (let i = 0; i < value.length; i += 1) {
-				yield [key, value[i]];
-			}
-		}
-	}
-
-	*keys() {
-		for (const [key] of this.#map) yield key;
-	}
-
-	*values() {
-		for (const [, value] of this.#map) {
-			for (let i = 0; i < value.length; i += 1) {
-				yield value[i];
-			}
-		}
-	}
-}
-
-/**
- * @param {import('types/app').RawBody} raw
- * @param {import('types/helper').RequestHeaders} headers
- */
-function parse_body(raw, headers) {
-	if (!raw) return raw;
-
-	const content_type = headers['content-type'];
-	const [type, ...directives] = content_type ? content_type.split(/;\s*/) : [];
-
-	const text = () => new TextDecoder(headers['content-encoding'] || 'utf-8').decode(raw);
-
-	switch (type) {
-		case 'text/plain':
-			return text();
-
-		case 'application/json':
-			return JSON.parse(text());
-
-		case 'application/x-www-form-urlencoded':
-			return get_urlencoded(text());
-
-		case 'multipart/form-data': {
-			const boundary = directives.find((directive) => directive.startsWith('boundary='));
-			if (!boundary) throw new Error('Missing boundary');
-			return get_multipart(text(), boundary.slice('boundary='.length));
-		}
-		default:
-			return raw;
-	}
-}
-
-/** @param {string} text */
-function get_urlencoded(text) {
-	const { data, append } = read_only_form_data();
-
-	text
-		.replace(/\+/g, ' ')
-		.split('&')
-		.forEach((str) => {
-			const [key, value] = str.split('=');
-			append(decodeURIComponent(key), decodeURIComponent(value));
+		return new Response(`Bad request in load function: failed to fetch ${state.fetched}`, {
+			status: 500
 		});
-
-	return data;
-}
-
-/**
- * @param {string} text
- * @param {string} boundary
- */
-function get_multipart(text, boundary) {
-	const parts = text.split(`--${boundary}`);
-
-	if (parts[0] !== '' || parts[parts.length - 1].trim() !== '--') {
-		throw new Error('Malformed form data');
 	}
-
-	const { data, append } = read_only_form_data();
-
-	parts.slice(1, -1).forEach((part) => {
-		const match = /\s*([\s\S]+?)\r\n\r\n([\s\S]*)\s*/.exec(part);
-		if (!match) {
-			throw new Error('Malformed form data');
-		}
-		const raw_headers = match[1];
-		const body = match[2].trim();
-
-		let key;
-
-		/** @type {Record<string, string>} */
-		const headers = {};
-		raw_headers.split('\r\n').forEach((str) => {
-			const [raw_header, ...raw_directives] = str.split('; ');
-			let [name, value] = raw_header.split(': ');
-
-			name = name.toLowerCase();
-			headers[name] = value;
-
-			/** @type {Record<string, string>} */
-			const directives = {};
-			raw_directives.forEach((raw_directive) => {
-				const [name, value] = raw_directive.split('=');
-				directives[name] = JSON.parse(value); // TODO is this right?
-			});
-
-			if (name === 'content-disposition') {
-				if (value !== 'form-data') throw new Error('Malformed form data');
-
-				if (directives.filename) {
-					// TODO we probably don't want to do this automatically
-					throw new Error('File upload is not yet implemented');
-				}
-
-				if (directives.name) {
-					key = directives.name;
-				}
-			}
-		});
-
-		if (!key) throw new Error('Malformed form data');
-
-		append(key, body);
-	});
-
-	return data;
 }
 
-/** @type {import('@sveltejs/kit/ssr').Respond} */
-async function respond(incoming, options, state = {}) {
-	if (incoming.url.pathname !== '/' && options.trailing_slash !== 'ignore') {
-		const has_trailing_slash = incoming.url.pathname.endsWith('/');
+/** @type {import('types/internal').Respond} */
+async function respond(request, options, state = {}) {
+	const url = new URL(request.url);
+
+	if (url.pathname !== '/' && options.trailing_slash !== 'ignore') {
+		const has_trailing_slash = url.pathname.endsWith('/');
 
 		if (
 			(has_trailing_slash && options.trailing_slash === 'never') ||
 			(!has_trailing_slash &&
 				options.trailing_slash === 'always' &&
-				!(incoming.url.pathname.split('/').pop() || '').includes('.'))
+				!(url.pathname.split('/').pop() || '').includes('.'))
 		) {
-			incoming.url.pathname = has_trailing_slash
-				? incoming.url.pathname.slice(0, -1)
-				: incoming.url.pathname + '/';
+			url.pathname = has_trailing_slash ? url.pathname.slice(0, -1) : url.pathname + '/';
 
-			if (incoming.url.search === '?') incoming.url.search = '';
+			if (url.search === '?') url.search = '';
 
-			return {
+			return new Response(undefined, {
 				status: 301,
 				headers: {
-					location: incoming.url.pathname + incoming.url.search
+					location: url.pathname + url.search
 				}
-			};
+			});
 		}
 	}
 
-	const headers = lowercase_keys(incoming.headers);
-	const request = {
-		...incoming,
-		headers,
-		body: parse_body(incoming.rawBody, headers),
-		params: {},
-		locals: {}
-	};
-
 	const { parameter, allowed } = options.method_override;
-	const method_override = incoming.url.searchParams.get(parameter)?.toUpperCase();
+	const method_override = url.searchParams.get(parameter)?.toUpperCase();
 
 	if (method_override) {
-		if (request.method.toUpperCase() === 'POST') {
+		if (request.method === 'POST') {
 			if (allowed.includes(method_override)) {
-				request.method = method_override;
+				request = new Proxy(request, {
+					get: (target, property, _receiver) => {
+						if (property === 'method') return method_override;
+						return Reflect.get(target, property, target);
+					}
+				});
 			} else {
 				const verb = allowed.length === 0 ? 'enabled' : 'allowed';
 				const body = `${parameter}=${method_override} is not ${verb}. See https://kit.svelte.dev/docs#configuration-methodoverride`;
 
-				return {
-					status: 400,
-					headers: {},
-					body
-				};
+				return new Response(body, {
+					status: 400
+				});
 			}
 		} else {
 			throw new Error(`${parameter}=${method_override} is only allowed with POST requests`);
 		}
 	}
 
+	/** @type {import('types/hooks').RequestEvent} */
+	const event = {
+		request,
+		url,
+		params: {},
+		locals: {}
+	};
+
 	// TODO remove this for 1.0
 	/**
 	 * @param {string} property
 	 * @param {string} replacement
+	 * @param {string} suffix
 	 */
-	const print_error = (property, replacement) => {
-		Object.defineProperty(request, property, {
-			get: () => {
-				throw new Error(`request.${property} has been replaced by request.url.${replacement}`);
-			}
-		});
+	const removed = (property, replacement, suffix = '') => ({
+		get: () => {
+			throw new Error(`event.${property} has been replaced by event.${replacement}` + suffix);
+		}
+	});
+
+	const details = '. See https://github.com/sveltejs/kit/pull/3384 for details';
+
+	const body_getter = {
+		get: () => {
+			throw new Error(
+				'To access the request body use the text/json/arrayBuffer/formData methods, e.g. `body = await request.json()`' +
+					details
+			);
+		}
 	};
 
-	print_error('origin', 'origin');
-	print_error('path', 'pathname');
-	print_error('query', 'searchParams');
+	Object.defineProperties(event, {
+		method: removed('method', 'request.method', details),
+		headers: removed('headers', 'request.headers', details),
+		origin: removed('origin', 'url.origin'),
+		path: removed('path', 'url.pathname'),
+		query: removed('query', 'url.searchParams'),
+		body: body_getter,
+		rawBody: body_getter
+	});
 
 	let ssr = true;
 
 	try {
 		return await options.hooks.handle({
-			request,
-			resolve: async (request, opts) => {
+			event,
+			resolve: async (event, opts) => {
 				if (opts && 'ssr' in opts) ssr = /** @type {boolean} */ (opts.ssr);
 
 				if (state.prerender && state.prerender.fallback) {
 					return await render_response({
-						url: request.url,
-						params: request.params,
+						url: event.url,
+						params: event.params,
 						options,
 						state,
-						$session: await options.hooks.getSession(request),
+						$session: await options.hooks.getSession(event),
 						page_config: { router: true, hydrate: true },
 						stuff: {},
 						status: 200,
@@ -1896,7 +1730,7 @@ async function respond(incoming, options, state = {}) {
 					});
 				}
 
-				let decoded = decodeURI(request.url.pathname);
+				let decoded = decodeURI(event.url.pathname);
 
 				if (options.paths.base) {
 					if (!decoded.startsWith(options.paths.base)) return;
@@ -1909,47 +1743,40 @@ async function respond(incoming, options, state = {}) {
 
 					const response =
 						route.type === 'endpoint'
-							? await render_endpoint(request, route, match)
-							: await render_page(request, route, match, options, state, ssr);
+							? await render_endpoint(event, route, match)
+							: await render_page(event, route, match, options, state, ssr);
 
 					if (response) {
-						// inject ETags for 200 responses, if the endpoint
-						// doesn't have its own ETag handling
-						if (response.status === 200 && !response.headers.etag) {
-							const cache_control = get_single_valued_header(response.headers, 'cache-control');
-							if (!cache_control || !/(no-store|immutable)/.test(cache_control)) {
-								let if_none_match_value = request.headers['if-none-match'];
-								// ignore W/ prefix https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-None-Match#directives
-								if (if_none_match_value?.startsWith('W/"')) {
-									if_none_match_value = if_none_match_value.substring(2);
+						// respond with 304 if etag matches
+						if (response.status === 200 && response.headers.has('etag')) {
+							let if_none_match_value = request.headers.get('if-none-match');
+
+							// ignore W/ prefix https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-None-Match#directives
+							if (if_none_match_value?.startsWith('W/"')) {
+								if_none_match_value = if_none_match_value.substring(2);
+							}
+
+							const etag = /** @type {string} */ (response.headers.get('etag'));
+
+							if (if_none_match_value === etag) {
+								const headers = new Headers({ etag });
+
+								// https://datatracker.ietf.org/doc/html/rfc7232#section-4.1
+								for (const key of [
+									'cache-control',
+									'content-location',
+									'date',
+									'expires',
+									'vary'
+								]) {
+									const value = response.headers.get(key);
+									if (value) headers.set(key, value);
 								}
 
-								const etag = `"${hash(response.body || '')}"`;
-
-								if (if_none_match_value === etag) {
-									/** @type {import('types/helper').ResponseHeaders} */
-									const headers = { etag };
-
-									// https://datatracker.ietf.org/doc/html/rfc7232#section-4.1
-									for (const key of [
-										'cache-control',
-										'content-location',
-										'date',
-										'expires',
-										'vary'
-									]) {
-										if (key in response.headers) {
-											headers[key] = /** @type {string} */ (response.headers[key]);
-										}
-									}
-
-									return {
-										status: 304,
-										headers
-									};
-								}
-
-								response.headers['etag'] = etag;
+								return new Response(undefined, {
+									status: 304,
+									headers
+								});
 							}
 						}
 
@@ -1960,28 +1787,34 @@ async function respond(incoming, options, state = {}) {
 				// if this request came direct from the user, rather than
 				// via a `fetch` in a `load`, render a 404 page
 				if (!state.initiator) {
-					const $session = await options.hooks.getSession(request);
+					const $session = await options.hooks.getSession(event);
 					return await respond_with_error({
-						request,
+						event,
 						options,
 						state,
 						$session,
 						status: 404,
-						error: new Error(`Not found: ${request.url.pathname}`),
+						error: new Error(`Not found: ${event.url.pathname}`),
 						ssr
 					});
 				}
+			},
+
+			// TODO remove for 1.0
+			// @ts-expect-error
+			get request() {
+				throw new Error('request in handle has been replaced with event' + details);
 			}
 		});
 	} catch (/** @type {unknown} */ e) {
 		const error = coalesce_to_error(e);
 
-		options.handle_error(error, request);
+		options.handle_error(error, event);
 
 		try {
-			const $session = await options.hooks.getSession(request);
+			const $session = await options.hooks.getSession(event);
 			return await respond_with_error({
-				request,
+				event,
 				options,
 				state,
 				$session,
@@ -1992,11 +1825,9 @@ async function respond(incoming, options, state = {}) {
 		} catch (/** @type {unknown} */ e) {
 			const error = coalesce_to_error(e);
 
-			return {
-				status: 500,
-				headers: {},
-				body: options.dev ? error.stack : error.message
-			};
+			return new Response(options.dev ? error.stack : error.message, {
+				status: 500
+			});
 		}
 	}
 }

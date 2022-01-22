@@ -5,7 +5,7 @@
 	 */
 	export async function load({ fetch, params }) {
 		media_type.set('movie');
-		const movie_res = await fetch('../api/getMovie', {
+		const movie_res = await fetch('../api/postMovie', {
 			headers: {
 				'Content-Type': 'application/json'
 			},
@@ -17,7 +17,7 @@
 		});
 		const movie = await movie_res.json();
 		const movie_details = await movie.res;
-		const trailer_res = await fetch('../api/getTrailer', {
+		const trailer_res = await fetch('../api/postTrailer', {
 			headers: {
 				'Content-Type': 'application/json'
 			},
@@ -29,7 +29,7 @@
 		});
 		const trailer = await trailer_res.json();
 		const trailer_details = trailer.res.results;
-		const cast_res = await fetch('../../api/getCast', {
+		const cast_res = await fetch('../../api/postCast', {
 			headers: {
 				'Content-Type': 'application/json'
 			},

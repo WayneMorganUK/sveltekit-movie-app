@@ -6,7 +6,7 @@
 
 	export async function load({ fetch, params }) {
 		const res = await (
-			await fetch('../api/getMovie', {
+			await fetch('../api/postMovie', {
 				headers: {
 					'Content-Type': 'application/json'
 				},
@@ -20,7 +20,7 @@
 		const person = await res.res;
 
 		const resp = await (
-			await fetch('../api/getKnownFor', {
+			await fetch('../api/postKnownFor', {
 				headers: {
 					'Content-Type': 'application/json'
 				},

@@ -12,7 +12,6 @@
 		video_site
 	} from '$lib/stores/store';
 	import Seasons from '$lib/utilities/Seasons.svelte';
-	import { tooltip } from '$lib/utilities/tooltip';
 
 	export let tv_details: TvType;
 	export let trailer_details: TrailerType[];
@@ -94,7 +93,6 @@
 									<button
 										on:click={() => showModal(trailer.key, trailer.site)}
 										title={trailer.name}
-										use:tooltip
 									>
 										<img
 											src={`https://img.youtube.com/vi/${trailer.key}/0.jpg`}

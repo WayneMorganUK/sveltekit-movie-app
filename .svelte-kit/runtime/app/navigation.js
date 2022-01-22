@@ -1,7 +1,5 @@
-import { renderer, router as router$1 } from '../client/singletons.js';
+import { renderer, router } from '../client/singletons.js';
 import { g as get_base_uri } from '../chunks/utils.js';
-
-const router = /** @type {import('../client/router').Router} */ (router$1);
 
 /**
  * @param {string} name

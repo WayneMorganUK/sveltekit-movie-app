@@ -12,7 +12,7 @@
 	async function moreData() {
 		let res: Response;
 		if (searching) {
-			res = await fetch('../api/getSearch', {
+			res = await fetch('../api/postSearch', {
 				headers: {
 					'Content-Type': 'application/json'
 				},
@@ -24,7 +24,7 @@
 				})
 			});
 		} else if (genres === undefined) {
-			res = await fetch('../api/getShow', {
+			res = await fetch('../api/postShow', {
 				headers: {
 					'Content-Type': 'application/json'
 				},
@@ -35,7 +35,7 @@
 				})
 			});
 		} else {
-			res = await fetch('../../api/getShowGenre', {
+			res = await fetch('../../api/postShowGenre', {
 				headers: {
 					'Content-Type': 'application/json'
 				},

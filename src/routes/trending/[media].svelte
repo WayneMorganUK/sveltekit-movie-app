@@ -8,7 +8,7 @@
 		current_page.set(1);
 		media_type.set(params.media as MediaType);
 		const res = await (
-			await fetch('../../api/getShow', {
+			await fetch('../../api/postShow', {
 				headers: {
 					'Content-Type': 'application/json'
 				},

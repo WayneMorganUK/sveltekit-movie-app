@@ -4,7 +4,6 @@
 	import Modal from '$lib/utilities/Modal.svelte';
 	import Cast from '$lib/components/Cast.svelte';
 	import { media_type, trailer_key, video_site } from '$lib/stores/store';
-	import { tooltip } from '$lib/utilities/tooltip';
 
 	export let movie_details: MovieType;
 	export let trailer_details: TrailerType[];
@@ -91,7 +90,6 @@
 									class="flex-shrink-0 w-56 pl-2 cursor-pointer hover:opacity-80"
 									on:click={() => showModal(trailer.key, trailer.site)}
 									title={trailer.name}
-									use:tooltip
 								>
 									<img src={`https://img.youtube.com/vi/${trailer.key}/0.jpg`} alt={trailer.name} />
 								</div>
