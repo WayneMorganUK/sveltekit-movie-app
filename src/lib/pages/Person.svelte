@@ -65,7 +65,7 @@
 			</div>
 		</div>
 		<div
-			class="bg-skin-tertiary rounded-2xl text-skin-base xl:col-start-2 xl:col-end-6 xl:row-start-2 xl:row-end-3 xl:bg-primary xl:ml-5 xl:p-3.5"
+			class="bg-skin-tertiary md:rounded-2xl text-skin-base xl:col-start-2 xl:col-end-6 xl:row-start-2 xl:row-end-3 xl:bg-primary xl:ml-5 xl:p-3.5"
 		>
 			<div class="pt-8">
 				<h4 class="xl:text-2xl pl-3.5 xl:pl-0">Known For</h4>

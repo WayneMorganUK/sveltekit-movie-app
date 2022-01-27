@@ -45,10 +45,6 @@ const config = {
 					border: 'var(--color-border)'
 				}
 			},
-			fontFamily: {
-				body: ['Raleway']
-			},
-
 			spacing: {
 				5: '1.125rem',
 				18: '4.5rem',

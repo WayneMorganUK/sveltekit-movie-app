@@ -4,6 +4,7 @@
 	import Modal from '$lib/utilities/Modal.svelte';
 	import Cast from '$lib/components/Cast.svelte';
 	import { media_type, trailer_key, video_site } from '$lib/stores/store';
+	import { browser } from '$app/env';
 
 	export let movie_details: MovieType;
 	export let trailer_details: TrailerType[];
@@ -19,8 +20,9 @@
 		$video_site = site;
 		modal.show();
 	}
-
-	window.scrollTo({ top: -1000, behavior: 'smooth' });
+	if (browser) {
+		window.scrollTo({ top: -1000, behavior: 'smooth' });
+	}
 </script>
 
 {#if movie_details.id && trailer_details}

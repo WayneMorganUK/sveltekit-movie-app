@@ -12,6 +12,7 @@
 		video_site
 	} from '$lib/stores/store';
 	import Seasons from '$lib/utilities/Seasons.svelte';
+	import { browser } from '$app/env';
 
 	export let tv_details: TvType;
 	export let trailer_details: TrailerType[];
@@ -31,7 +32,9 @@
 		$video_site = site;
 		modal.show();
 	}
-	window.scrollTo({ top: -1000, behavior: 'smooth' });
+	if (browser) {
+		window.scrollTo({ top: -1000, behavior: 'smooth' });
+	}
 </script>
 
 {#if tv_details.id && trailer_details}

@@ -45,7 +45,7 @@
 	<div class="fixed top-0 w-full min-h-screen -z-50 bg-gradient-to-r from-skin-bg to-skin-border" />
 
 	<Header />
-	<section class="mx-auto mt-[60px] max-w-7xl">
+	<section class="mx-auto mt-12 md:mt-[60px] max-w-7xl">
 		<slot />
 	</section>
 </main>

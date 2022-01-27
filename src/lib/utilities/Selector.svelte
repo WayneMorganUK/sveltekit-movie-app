@@ -16,7 +16,7 @@
 	}
 </script>
 
-<div class="pl-6 xl:pl-8 ">
+<div class="pl-4 xl:pl-8 ">
 	<div class="relative z-50 inline-block group">
 		<button
 			aria-label="Movies"
@@ -42,7 +42,7 @@
 	</div>
 </div>
 
-<div class="pl-6 xl:pl-8 ">
+<div class="pl-4 xl:pl-8 ">
 	<div class="relative z-50 inline-block group">
 		<button
 			aria-label="TV Shows"
@@ -70,7 +70,7 @@
 	</div>
 </div>
 
-<div class="pl-6 xl:pl-8 ">
+<div class="pl-4 xl:pl-8 ">
 	<div class="relative z-50 inline-block group">
 		<button
 			aria-label="People"
@@ -103,7 +103,7 @@
 	</div>
 </div>
 {#key $selected}
-	<div class="pl-6 xl:pl-8 ">
+	<div class="pl-4 xl:pl-8 ">
 		<div class="relative z-50 inline-block group">
 			<button
 				aria-label="Genres"
