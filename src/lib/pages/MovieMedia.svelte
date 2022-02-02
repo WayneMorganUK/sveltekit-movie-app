@@ -8,9 +8,7 @@
 
 	export let movie_details: MovieType;
 	export let trailer_details: TrailerType[];
-
-	// export let movie_id: string;
-	export let cast_details: CastType[];
+	export let cast_details: PersonType[];
 
 	const IMAGE_API = 'https://image.tmdb.org/t/p/';
 	let modal: { show: () => any };

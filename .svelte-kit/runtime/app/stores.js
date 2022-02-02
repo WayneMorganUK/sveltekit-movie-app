@@ -33,7 +33,8 @@ const getStores = () => {
 				subscribe: stores.navigating.subscribe
 			};
 		},
-		session: stores.session
+		session: stores.session,
+		updated: stores.updated
 	};
 };
 
@@ -79,4 +80,18 @@ const session = {
 	update: () => throw_error('update')
 };
 
-export { getStores, navigating, page, session, stores };
+/** @type {typeof import('$app/stores').updated} */
+const updated = {
+	subscribe(fn) {
+		const store = getStores().updated;
+
+		if (browser) {
+			updated.check = store.check;
+		}
+
+		return store.subscribe(fn);
+	},
+	check: () => throw_error('check')
+};
+
+export { getStores, navigating, page, session, stores, updated };

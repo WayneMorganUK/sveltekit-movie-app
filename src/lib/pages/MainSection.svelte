@@ -7,7 +7,7 @@
 	import { get } from 'svelte/store';
 	export let total_pages = 1;
 	export let genres: number = undefined;
-	export let searching = undefined;
+	export let searching: string = undefined;
 
 	async function moreData() {
 		let res: Response;

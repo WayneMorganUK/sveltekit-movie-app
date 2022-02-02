@@ -1,5 +1,5 @@
 <script lang="ts">
-	export let cast_details = [];
+	export let cast_details: PersonType[] = [];
 	const IMAGE_API = 'https://image.tmdb.org/t/p/w200/';
 </script>
 

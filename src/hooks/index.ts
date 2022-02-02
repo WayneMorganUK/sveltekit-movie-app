@@ -9,7 +9,7 @@ const getCookieValue = (cookie: string, name: string): string | null =>
     cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)')?.pop() || null
 
 
-export const getSession = ({ request }) => {
+export const getSession = ({ request }: { request: Request }) => {
     const theme = request.headers.get('cookie')
         ? (getCookieValue(request.headers.get('cookie'), 'theme') as Theme)
         : null

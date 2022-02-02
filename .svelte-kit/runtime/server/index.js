@@ -175,13 +175,13 @@ function is_pojo(body) {
 		if (body._readableState && body._writableState && body._events) return false;
 
 		// similarly, it could be a web ReadableStream
-		if (body[Symbol.toStringTag] === 'ReadableStream') return false;
+		if (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream) return false;
 	}
 
 	return true;
 }
 
-var chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$';
+var chars$1 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$';
 var unsafeChars = /[<>\b\f\n\r\t\0\u2028\u2029]/g;
 var reserved = /^(?:do|if|in|for|int|let|new|try|var|byte|case|char|else|enum|goto|long|this|void|with|await|break|catch|class|const|final|float|short|super|throw|while|yield|delete|double|export|import|native|return|switch|throws|typeof|boolean|default|extends|finally|package|private|abstract|continue|debugger|function|volatile|interface|protected|transient|implements|instanceof|synchronized)$/;
 var escaped = {
@@ -341,8 +341,8 @@ function devalue(value) {
 function getName(num) {
     var name = '';
     do {
-        name = chars[num % chars.length] + name;
-        num = ~~(num / chars.length) - 1;
+        name = chars$1[num % chars$1.length] + name;
+        num = ~~(num / chars$1.length) - 1;
     } while (num >= 0);
     return reserved.test(name) ? name + "_" : name;
 }
@@ -413,6 +413,16 @@ function safe_not_equal(a, b) {
 Promise.resolve();
 
 const subscriber_queue = [];
+/**
+ * Creates a `Readable` store that allows reading by subscription.
+ * @param value initial value
+ * @param {StartStopNotifier}start start and stop notifications for subscriptions
+ */
+function readable(value, start) {
+    return {
+        subscribe: writable(value, start).subscribe
+    };
+}
 /**
  * Create a `Writable` store that allows both updating and reading by subscription.
  * @param {*=}value initial value
@@ -564,13 +574,467 @@ function create_prerendering_url_proxy(url) {
 	});
 }
 
+const encoder = new TextEncoder();
+
+/**
+ * SHA-256 hashing function adapted from https://bitwiseshiftleft.github.io/sjcl
+ * modified and redistributed under BSD license
+ * @param {string} data
+ */
+function sha256(data) {
+	if (!key[0]) precompute();
+
+	const out = init.slice(0);
+	const array = encode(data);
+
+	for (let i = 0; i < array.length; i += 16) {
+		const w = array.subarray(i, i + 16);
+
+		let tmp;
+		let a;
+		let b;
+
+		let out0 = out[0];
+		let out1 = out[1];
+		let out2 = out[2];
+		let out3 = out[3];
+		let out4 = out[4];
+		let out5 = out[5];
+		let out6 = out[6];
+		let out7 = out[7];
+
+		/* Rationale for placement of |0 :
+		 * If a value can overflow is original 32 bits by a factor of more than a few
+		 * million (2^23 ish), there is a possibility that it might overflow the
+		 * 53-bit mantissa and lose precision.
+		 *
+		 * To avoid this, we clamp back to 32 bits by |'ing with 0 on any value that
+		 * propagates around the loop, and on the hash state out[]. I don't believe
+		 * that the clamps on out4 and on out0 are strictly necessary, but it's close
+		 * (for out4 anyway), and better safe than sorry.
+		 *
+		 * The clamps on out[] are necessary for the output to be correct even in the
+		 * common case and for short inputs.
+		 */
+
+		for (let i = 0; i < 64; i++) {
+			// load up the input word for this round
+
+			if (i < 16) {
+				tmp = w[i];
+			} else {
+				a = w[(i + 1) & 15];
+
+				b = w[(i + 14) & 15];
+
+				tmp = w[i & 15] =
+					(((a >>> 7) ^ (a >>> 18) ^ (a >>> 3) ^ (a << 25) ^ (a << 14)) +
+						((b >>> 17) ^ (b >>> 19) ^ (b >>> 10) ^ (b << 15) ^ (b << 13)) +
+						w[i & 15] +
+						w[(i + 9) & 15]) |
+					0;
+			}
+
+			tmp =
+				tmp +
+				out7 +
+				((out4 >>> 6) ^ (out4 >>> 11) ^ (out4 >>> 25) ^ (out4 << 26) ^ (out4 << 21) ^ (out4 << 7)) +
+				(out6 ^ (out4 & (out5 ^ out6))) +
+				key[i]; // | 0;
+
+			// shift register
+			out7 = out6;
+			out6 = out5;
+			out5 = out4;
+
+			out4 = (out3 + tmp) | 0;
+
+			out3 = out2;
+			out2 = out1;
+			out1 = out0;
+
+			out0 =
+				(tmp +
+					((out1 & out2) ^ (out3 & (out1 ^ out2))) +
+					((out1 >>> 2) ^
+						(out1 >>> 13) ^
+						(out1 >>> 22) ^
+						(out1 << 30) ^
+						(out1 << 19) ^
+						(out1 << 10))) |
+				0;
+		}
+
+		out[0] = (out[0] + out0) | 0;
+		out[1] = (out[1] + out1) | 0;
+		out[2] = (out[2] + out2) | 0;
+		out[3] = (out[3] + out3) | 0;
+		out[4] = (out[4] + out4) | 0;
+		out[5] = (out[5] + out5) | 0;
+		out[6] = (out[6] + out6) | 0;
+		out[7] = (out[7] + out7) | 0;
+	}
+
+	const bytes = new Uint8Array(out.buffer);
+	reverse_endianness(bytes);
+
+	return base64(bytes);
+}
+
+/** The SHA-256 initialization vector */
+const init = new Uint32Array(8);
+
+/** The SHA-256 hash key */
+const key = new Uint32Array(64);
+
+/** Function to precompute init and key. */
+function precompute() {
+	/** @param {number} x */
+	function frac(x) {
+		return (x - Math.floor(x)) * 0x100000000;
+	}
+
+	let prime = 2;
+
+	for (let i = 0; i < 64; prime++) {
+		let is_prime = true;
+
+		for (let factor = 2; factor * factor <= prime; factor++) {
+			if (prime % factor === 0) {
+				is_prime = false;
+
+				break;
+			}
+		}
+
+		if (is_prime) {
+			if (i < 8) {
+				init[i] = frac(prime ** (1 / 2));
+			}
+
+			key[i] = frac(prime ** (1 / 3));
+
+			i++;
+		}
+	}
+}
+
+/** @param {Uint8Array} bytes */
+function reverse_endianness(bytes) {
+	for (let i = 0; i < bytes.length; i += 4) {
+		const a = bytes[i + 0];
+		const b = bytes[i + 1];
+		const c = bytes[i + 2];
+		const d = bytes[i + 3];
+
+		bytes[i + 0] = d;
+		bytes[i + 1] = c;
+		bytes[i + 2] = b;
+		bytes[i + 3] = a;
+	}
+}
+
+/** @param {string} str */
+function encode(str) {
+	const encoded = encoder.encode(str);
+	const length = encoded.length * 8;
+
+	// result should be a multiple of 512 bits in length,
+	// with room for a 1 (after the data) and two 32-bit
+	// words containing the original input bit length
+	const size = 512 * Math.ceil((length + 65) / 512);
+	const bytes = new Uint8Array(size / 8);
+	bytes.set(encoded);
+
+	// append a 1
+	bytes[encoded.length] = 0b10000000;
+
+	reverse_endianness(bytes);
+
+	// add the input bit length
+	const words = new Uint32Array(bytes.buffer);
+	words[words.length - 2] = Math.floor(length / 0x100000000); // this will always be zero for us
+	words[words.length - 1] = length;
+
+	return words;
+}
+
+/*
+	Based on https://gist.github.com/enepomnyaschih/72c423f727d395eeaa09697058238727
+
+	MIT License
+	Copyright (c) 2020 Egor Nepomnyaschih
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+*/
+const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'.split('');
+
+/** @param {Uint8Array} bytes */
+function base64(bytes) {
+	const l = bytes.length;
+
+	let result = '';
+	let i;
+
+	for (i = 2; i < l; i += 3) {
+		result += chars[bytes[i - 2] >> 2];
+		result += chars[((bytes[i - 2] & 0x03) << 4) | (bytes[i - 1] >> 4)];
+		result += chars[((bytes[i - 1] & 0x0f) << 2) | (bytes[i] >> 6)];
+		result += chars[bytes[i] & 0x3f];
+	}
+
+	if (i === l + 1) {
+		// 1 octet yet to write
+		result += chars[bytes[i - 2] >> 2];
+		result += chars[(bytes[i - 2] & 0x03) << 4];
+		result += '==';
+	}
+
+	if (i === l) {
+		// 2 octets yet to write
+		result += chars[bytes[i - 2] >> 2];
+		result += chars[((bytes[i - 2] & 0x03) << 4) | (bytes[i - 1] >> 4)];
+		result += chars[(bytes[i - 1] & 0x0f) << 2];
+		result += '=';
+	}
+
+	return result;
+}
+
+/** @type {Promise<void>} */
+let csp_ready;
+
+/** @type {() => string} */
+let generate_nonce;
+
+/** @type {(input: string) => string} */
+let generate_hash;
+
+if (typeof crypto !== 'undefined') {
+	const array = new Uint8Array(16);
+
+	generate_nonce = () => {
+		crypto.getRandomValues(array);
+		return base64(array);
+	};
+
+	generate_hash = sha256;
+} else {
+	// TODO: remove this in favor of web crypto API once we no longer support Node 14
+	const name = 'crypto'; // store in a variable to fool esbuild when adapters bundle kit
+	csp_ready = import(name).then((crypto) => {
+		generate_nonce = () => {
+			return crypto.randomBytes(16).toString('base64');
+		};
+
+		generate_hash = (input) => {
+			return crypto.createHash('sha256').update(input, 'utf-8').digest().toString('base64');
+		};
+	});
+}
+
+const quoted = new Set([
+	'self',
+	'unsafe-eval',
+	'unsafe-hashes',
+	'unsafe-inline',
+	'none',
+	'strict-dynamic',
+	'report-sample'
+]);
+
+const crypto_pattern = /^(nonce|sha\d\d\d)-/;
+
+class Csp {
+	/** @type {boolean} */
+	#use_hashes;
+
+	/** @type {boolean} */
+	#dev;
+
+	/** @type {boolean} */
+	#script_needs_csp;
+
+	/** @type {boolean} */
+	#style_needs_csp;
+
+	/** @type {import('types/csp').CspDirectives} */
+	#directives;
+
+	/** @type {import('types/csp').Source[]} */
+	#script_src;
+
+	/** @type {import('types/csp').Source[]} */
+	#style_src;
+
+	/**
+	 * @param {{
+	 *   mode: string,
+	 *   directives: import('types/csp').CspDirectives
+	 * }} config
+	 * @param {{
+	 *   dev: boolean;
+	 *   prerender: boolean;
+	 *   needs_nonce: boolean;
+	 * }} opts
+	 */
+	constructor({ mode, directives }, { dev, prerender, needs_nonce }) {
+		this.#use_hashes = mode === 'hash' || (mode === 'auto' && prerender);
+		this.#directives = dev ? { ...directives } : directives; // clone in dev so we can safely mutate
+		this.#dev = dev;
+
+		const d = this.#directives;
+
+		if (dev) {
+			// remove strict-dynamic in dev...
+			// TODO reinstate this if we can figure out how to make strict-dynamic work
+			// if (d['default-src']) {
+			// 	d['default-src'] = d['default-src'].filter((name) => name !== 'strict-dynamic');
+			// 	if (d['default-src'].length === 0) delete d['default-src'];
+			// }
+
+			// if (d['script-src']) {
+			// 	d['script-src'] = d['script-src'].filter((name) => name !== 'strict-dynamic');
+			// 	if (d['script-src'].length === 0) delete d['script-src'];
+			// }
+
+			const effective_style_src = d['style-src'] || d['default-src'];
+
+			// ...and add unsafe-inline so we can inject <style> elements
+			if (effective_style_src && !effective_style_src.includes('unsafe-inline')) {
+				d['style-src'] = [...effective_style_src, 'unsafe-inline'];
+			}
+		}
+
+		this.#script_src = [];
+		this.#style_src = [];
+
+		const effective_script_src = d['script-src'] || d['default-src'];
+		const effective_style_src = d['style-src'] || d['default-src'];
+
+		this.#script_needs_csp =
+			!!effective_script_src &&
+			effective_script_src.filter((value) => value !== 'unsafe-inline').length > 0;
+
+		this.#style_needs_csp =
+			!dev &&
+			!!effective_style_src &&
+			effective_style_src.filter((value) => value !== 'unsafe-inline').length > 0;
+
+		this.script_needs_nonce = this.#script_needs_csp && !this.#use_hashes;
+		this.style_needs_nonce = this.#style_needs_csp && !this.#use_hashes;
+
+		if (this.script_needs_nonce || this.style_needs_nonce || needs_nonce) {
+			this.nonce = generate_nonce();
+		}
+	}
+
+	/** @param {string} content */
+	add_script(content) {
+		if (this.#script_needs_csp) {
+			if (this.#use_hashes) {
+				this.#script_src.push(`sha256-${generate_hash(content)}`);
+			} else if (this.#script_src.length === 0) {
+				this.#script_src.push(`nonce-${this.nonce}`);
+			}
+		}
+	}
+
+	/** @param {string} content */
+	add_style(content) {
+		if (this.#style_needs_csp) {
+			if (this.#use_hashes) {
+				this.#style_src.push(`sha256-${generate_hash(content)}`);
+			} else if (this.#style_src.length === 0) {
+				this.#style_src.push(`nonce-${this.nonce}`);
+			}
+		}
+	}
+
+	/** @param {boolean} [is_meta] */
+	get_header(is_meta = false) {
+		const header = [];
+
+		// due to browser inconsistencies, we can't append sources to default-src
+		// (specifically, Firefox appears to not ignore nonce-{nonce} directives
+		// on default-src), so we ensure that script-src and style-src exist
+
+		const directives = { ...this.#directives };
+
+		if (this.#style_src.length > 0) {
+			directives['style-src'] = [
+				...(directives['style-src'] || directives['default-src'] || []),
+				...this.#style_src
+			];
+		}
+
+		if (this.#script_src.length > 0) {
+			directives['script-src'] = [
+				...(directives['script-src'] || directives['default-src'] || []),
+				...this.#script_src
+			];
+		}
+
+		for (const key in directives) {
+			if (is_meta && (key === 'frame-ancestors' || key === 'report-uri' || key === 'sandbox')) {
+				// these values cannot be used with a <meta> tag
+				// TODO warn?
+				continue;
+			}
+
+			// @ts-expect-error gimme a break typescript, `key` is obviously a member of directives
+			const value = /** @type {string[] | true} */ (directives[key]);
+
+			if (!value) continue;
+
+			const directive = [key];
+			if (Array.isArray(value)) {
+				value.forEach((value) => {
+					if (quoted.has(value) || crypto_pattern.test(value)) {
+						directive.push(`'${value}'`);
+					} else {
+						directive.push(value);
+					}
+				});
+			}
+
+			header.push(directive.join(' '));
+		}
+
+		return header.join('; ');
+	}
+
+	get_meta() {
+		const content = escape_html_attr(this.get_header(true));
+		return `<meta http-equiv="content-security-policy" content=${content}>`;
+	}
+}
+
 // TODO rename this function/module
+
+const updated = {
+	...readable(false),
+	check: () => false
+};
 
 /**
  * @param {{
  *   branch: Array<import('./types').Loaded>;
- *   options: import('types/internal').SSRRenderOptions;
- *   state: import('types/internal').SSRRenderState;
+ *   options: import('types/internal').SSROptions;
+ *   state: import('types/internal').SSRState;
  *   $session: any;
  *   page_config: { hydrate: boolean, router: boolean };
  *   status: number;
@@ -594,8 +1058,18 @@ async function render_response({
 	ssr,
 	stuff
 }) {
-	const css = new Set(options.manifest._.entry.css);
-	const js = new Set(options.manifest._.entry.js);
+	if (state.prerender) {
+		if (options.csp.mode === 'nonce') {
+			throw new Error('Cannot use prerendering if config.kit.csp.mode === "nonce"');
+		}
+
+		if (options.template_contains_nonce) {
+			throw new Error('Cannot use prerendering if page template contains %svelte.nonce%');
+		}
+	}
+
+	const stylesheets = new Set(options.manifest._.entry.css);
+	const modulepreloads = new Set(options.manifest._.entry.js);
 	/** @type {Map<string, string>} */
 	const styles = new Map();
 
@@ -613,8 +1087,8 @@ async function render_response({
 
 	if (ssr) {
 		branch.forEach(({ node, loaded, fetched, uses_credentials }) => {
-			if (node.css) node.css.forEach((url) => css.add(url));
-			if (node.js) node.js.forEach((url) => js.add(url));
+			if (node.css) node.css.forEach((url) => stylesheets.add(url));
+			if (node.js) node.js.forEach((url) => modulepreloads.add(url));
 			if (node.styles) Object.entries(node.styles).forEach(([k, v]) => styles.set(k, v));
 
 			// TODO probably better if `fetched` wasn't populated unless `hydrate`
@@ -632,7 +1106,8 @@ async function render_response({
 			stores: {
 				page: writable(null),
 				navigating: writable(null),
-				session
+				session,
+				updated
 			},
 			page: {
 				url: state.prerender ? create_prerendering_url_proxy(url) : url,
@@ -686,11 +1161,46 @@ async function render_response({
 
 	const inlined_style = Array.from(styles.values()).join('\n');
 
-	if (state.prerender) {
-		if (maxage) {
-			head += `<meta http-equiv="cache-control" content="max-age=${maxage}">`;
+	await csp_ready;
+	const csp = new Csp(options.csp, {
+		dev: options.dev,
+		prerender: !!state.prerender,
+		needs_nonce: options.template_contains_nonce
+	});
+
+	const target = hash(body);
+
+	// prettier-ignore
+	const init_app = `
+		import { start } from ${s(options.prefix + options.manifest._.entry.file)};
+		start({
+			target: document.querySelector('[data-hydrate="${target}"]').parentNode,
+			paths: ${s(options.paths)},
+			session: ${try_serialize($session, (error) => {
+				throw new Error(`Failed to serialize session data: ${error.message}`);
+			})},
+			route: ${!!page_config.router},
+			spa: ${!ssr},
+			trailing_slash: ${s(options.trailing_slash)},
+			hydrate: ${ssr && page_config.hydrate ? `{
+				status: ${status},
+				error: ${serialize_error(error)},
+				nodes: [
+					${(branch || [])
+					.map(({ node }) => `import(${s(options.prefix + node.entry)})`)
+					.join(',\n\t\t\t\t\t\t')}
+				],
+				url: new URL(${s(url.href)}),
+				params: ${devalue(params)}
+			}` : 'null'}
+		});
+	`;
+
+	const init_service_worker = `
+		if ('serviceWorker' in navigator) {
+			navigator.serviceWorker.register('${options.service_worker}');
 		}
-	}
+	`;
 
 	if (options.amp) {
 		head += `
@@ -708,64 +1218,84 @@ async function render_response({
 		}
 	} else {
 		if (inlined_style) {
-			head += `\n\t<style${options.dev ? ' data-svelte' : ''}>${inlined_style}</style>`;
+			const attributes = [];
+			if (options.dev) attributes.push(' data-svelte');
+			if (csp.style_needs_nonce) attributes.push(` nonce="${csp.nonce}"`);
+
+			csp.add_style(inlined_style);
+
+			head += `\n\t<style${attributes.join('')}>${inlined_style}</style>`;
 		}
+
 		// prettier-ignore
-		head += Array.from(css)
-			.map((dep) => `\n\t<link${styles.has(dep) ? ' disabled media="(max-width: 0)"' : ''} rel="stylesheet" href="${options.prefix + dep}">`)
+		head += Array.from(stylesheets)
+			.map((dep) => {
+				const attributes = [
+					'rel="stylesheet"',
+					`href="${options.prefix + dep}"`
+				];
+
+				if (csp.style_needs_nonce) {
+					attributes.push(`nonce="${csp.nonce}"`);
+				}
+
+				if (styles.has(dep)) {
+					attributes.push('disabled', 'media="(max-width: 0)"');
+				}
+
+				return `\n\t<link ${attributes.join(' ')}>`;
+			})
 			.join('');
 
 		if (page_config.router || page_config.hydrate) {
-			head += Array.from(js)
+			head += Array.from(modulepreloads)
 				.map((dep) => `\n\t<link rel="modulepreload" href="${options.prefix + dep}">`)
 				.join('');
-			// prettier-ignore
-			head += `
-			<script type="module">
-				import { start } from ${s(options.prefix + options.manifest._.entry.file)};
-				start({
-					target: ${options.target ? `document.querySelector(${s(options.target)})` : 'document.body'},
-					paths: ${s(options.paths)},
-					session: ${try_serialize($session, (error) => {
-						throw new Error(`Failed to serialize session data: ${error.message}`);
-					})},
-					route: ${!!page_config.router},
-					spa: ${!ssr},
-					trailing_slash: ${s(options.trailing_slash)},
-					hydrate: ${ssr && page_config.hydrate ? `{
-						status: ${status},
-						error: ${serialize_error(error)},
-						nodes: [
-							${(branch || [])
-							.map(({ node }) => `import(${s(options.prefix + node.entry)})`)
-							.join(',\n\t\t\t\t\t\t')}
-						],
-						url: new URL(${s(url.href)}),
-						params: ${devalue(params)}
-					}` : 'null'}
-				});
-			</script>`;
 
+			const attributes = ['type="module"', `data-hydrate="${target}"`];
+
+			csp.add_script(init_app);
+
+			if (csp.script_needs_nonce) {
+				attributes.push(`nonce="${csp.nonce}"`);
+			}
+
+			body += `\n\t\t<script ${attributes.join(' ')}>${init_app}</script>`;
+
+			// prettier-ignore
 			body += serialized_data
 				.map(({ url, body, json }) => {
-					let attributes = `type="application/json" data-type="svelte-data" data-url=${escape_html_attr(
-						url
-					)}`;
+					let attributes = `type="application/json" data-type="svelte-data" data-url=${escape_html_attr(url)}`;
 					if (body) attributes += ` data-body="${hash(body)}"`;
 
 					return `<script ${attributes}>${json}</script>`;
 				})
-				.join('\n\n\t');
+				.join('\n\t');
 		}
 
 		if (options.service_worker) {
 			// always include service worker unless it's turned off explicitly
+			csp.add_script(init_service_worker);
+
 			head += `
-			<script>
-				if ('serviceWorker' in navigator) {
-					navigator.serviceWorker.register('${options.service_worker}');
-				}
-			</script>`;
+				<script${csp.script_needs_nonce ? ` nonce="${csp.nonce}"` : ''}>${init_service_worker}</script>`;
+		}
+	}
+
+	if (state.prerender) {
+		const http_equiv = [];
+
+		const csp_headers = csp.get_meta();
+		if (csp_headers) {
+			http_equiv.push(csp_headers);
+		}
+
+		if (maxage) {
+			http_equiv.push(`<meta http-equiv="cache-control" content="max-age=${maxage}">`);
+		}
+
+		if (http_equiv.length > 0) {
+			head = http_equiv.join('\n') + head;
 		}
 	}
 
@@ -773,7 +1303,7 @@ async function render_response({
 	const assets =
 		options.paths.assets || (segments.length > 0 ? segments.map(() => '..').join('/') : '.');
 
-	const html = options.template({ head, body, assets });
+	const html = options.template({ head, body, assets, nonce: /** @type {string} */ (csp.nonce) });
 
 	const headers = new Headers({
 		'content-type': 'text/html',
@@ -786,6 +1316,13 @@ async function render_response({
 
 	if (!options.floc) {
 		headers.set('permissions-policy', 'interest-cohort=()');
+	}
+
+	if (!state.prerender) {
+		const csp_header = csp.get_header();
+		if (csp_header) {
+			headers.set('content-security-policy', csp_header);
+		}
 	}
 
 	return new Response(html, {
@@ -930,8 +1467,8 @@ function is_root_relative(path) {
 /**
  * @param {{
  *   event: import('types/hooks').RequestEvent;
- *   options: import('types/internal').SSRRenderOptions;
- *   state: import('types/internal').SSRRenderState;
+ *   options: import('types/internal').SSROptions;
+ *   state: import('types/internal').SSRState;
  *   route: import('types/internal').SSRPage | null;
  *   url: URL;
  *   params: Record<string, string>;
@@ -1016,14 +1553,27 @@ async function load_node({
 
 				opts.headers = new Headers(opts.headers);
 
+				// merge headers from request
+				for (const [key, value] of event.request.headers) {
+					if (opts.headers.has(key)) continue;
+					if (key === 'cookie' || key === 'authorization' || key === 'if-none-match') continue;
+					opts.headers.set(key, value);
+				}
+
+				opts.headers.set('referer', event.url.href);
+
 				const resolved = resolve(event.url.pathname, requested.split('?')[0]);
 
+				/** @type {Response} */
 				let response;
+
+				/** @type {import('types/internal').PrerenderDependency} */
+				let dependency;
 
 				// handle fetch requests for static assets. e.g. prebaked data, etc.
 				// we need to support everything the browser's fetch supports
 				const prefix = options.paths.assets || options.paths.base;
-				const filename = (
+				const filename = decodeURIComponent(
 					resolved.startsWith(prefix) ? resolved.slice(prefix.length) : resolved
 				).slice(1);
 				const filename_html = `${filename}/index.html`; // path may also match path/index.html
@@ -1046,9 +1596,6 @@ async function load_node({
 						response = await fetch(`${url.origin}/${file}`, /** @type {RequestInit} */ (opts));
 					}
 				} else if (is_root_relative(resolved)) {
-					const relative = resolved;
-
-					// TODO: fix type https://github.com/node-fetch/node-fetch/issues/1113
 					if (opts.credentials !== 'omit') {
 						uses_credentials = true;
 
@@ -1072,28 +1619,14 @@ async function load_node({
 						throw new Error('Request body must be a string');
 					}
 
-					const rendered = await respond(
-						new Request(new URL(requested, event.url).href, opts),
-						options,
-						{
-							fetched: requested,
-							initiator: route
-						}
-					);
+					response = await respond(new Request(new URL(requested, event.url).href, opts), options, {
+						fetched: requested,
+						initiator: route
+					});
 
-					if (rendered) {
-						if (state.prerender) {
-							state.prerender.dependencies.set(relative, rendered);
-						}
-
-						response = rendered;
-					} else {
-						// we can't load the endpoint from our own manifest,
-						// so we need to make an actual HTTP request
-						return fetch(new URL(requested, event.url).href, {
-							method: opts.method || 'GET',
-							headers: opts.headers
-						});
+					if (state.prerender) {
+						dependency = { response, body: null };
+						state.prerender.dependencies.set(resolved, dependency);
 					}
 				} else {
 					// external
@@ -1126,59 +1659,69 @@ async function load_node({
 					response = await options.hooks.externalFetch.call(null, external_request);
 				}
 
-				if (response) {
-					const proxy = new Proxy(response, {
-						get(response, key, _receiver) {
-							async function text() {
-								const body = await response.text();
+				const proxy = new Proxy(response, {
+					get(response, key, _receiver) {
+						async function text() {
+							const body = await response.text();
 
-								/** @type {import('types/helper').ResponseHeaders} */
-								const headers = {};
-								for (const [key, value] of response.headers) {
-									if (key === 'set-cookie') {
-										set_cookie_headers = set_cookie_headers.concat(value);
-									} else if (key !== 'etag') {
-										headers[key] = value;
-									}
+							/** @type {import('types/helper').ResponseHeaders} */
+							const headers = {};
+							for (const [key, value] of response.headers) {
+								if (key === 'set-cookie') {
+									set_cookie_headers = set_cookie_headers.concat(value);
+								} else if (key !== 'etag') {
+									headers[key] = value;
 								}
-
-								if (!opts.body || typeof opts.body === 'string') {
-									// prettier-ignore
-									fetched.push({
-										url: requested,
-										body: /** @type {string} */ (opts.body),
-										json: `{"status":${response.status},"statusText":${s(response.statusText)},"headers":${s(headers)},"body":"${escape_json_string_in_html(body)}"}`
-									});
-								}
-
-								return body;
 							}
 
-							if (key === 'text') {
-								return text;
+							if (!opts.body || typeof opts.body === 'string') {
+								// prettier-ignore
+								fetched.push({
+									url: requested,
+									body: /** @type {string} */ (opts.body),
+									json: `{"status":${response.status},"statusText":${s(response.statusText)},"headers":${s(headers)},"body":"${escape_json_string_in_html(body)}"}`
+								});
 							}
 
-							if (key === 'json') {
-								return async () => {
-									return JSON.parse(await text());
-								};
+							if (dependency) {
+								dependency.body = body;
 							}
 
-							// TODO arrayBuffer?
-
-							return Reflect.get(response, key, response);
+							return body;
 						}
-					});
 
-					return proxy;
-				}
+						if (key === 'arrayBuffer') {
+							return async () => {
+								const buffer = await response.arrayBuffer();
 
-				return (
-					response ||
-					new Response('Not found', {
-						status: 404
-					})
-				);
+								if (dependency) {
+									dependency.body = new Uint8Array(buffer);
+								}
+
+								// TODO should buffer be inlined into the page (albeit base64'd)?
+								// any conditions in which it shouldn't be?
+
+								return buffer;
+							};
+						}
+
+						if (key === 'text') {
+							return text;
+						}
+
+						if (key === 'json') {
+							return async () => {
+								return JSON.parse(await text());
+							};
+						}
+
+						// TODO arrayBuffer?
+
+						return Reflect.get(response, key, response);
+					}
+				});
+
+				return proxy;
 			},
 			stuff: { ...stuff }
 		};
@@ -1222,15 +1765,15 @@ async function load_node({
 
 /**
  * @typedef {import('./types.js').Loaded} Loaded
- * @typedef {import('types/internal').SSRRenderOptions} SSRRenderOptions
- * @typedef {import('types/internal').SSRRenderState} SSRRenderState
+ * @typedef {import('types/internal').SSROptions} SSROptions
+ * @typedef {import('types/internal').SSRState} SSRState
  */
 
 /**
  * @param {{
  *   event: import('types/hooks').RequestEvent;
- *   options: SSRRenderOptions;
- *   state: SSRRenderState;
+ *   options: SSROptions;
+ *   state: SSRState;
  *   $session: any;
  *   status: number;
  *   error: Error;
@@ -1307,15 +1850,15 @@ async function respond_with_error({ event, options, state, $session, status, err
 /**
  * @typedef {import('./types.js').Loaded} Loaded
  * @typedef {import('types/internal').SSRNode} SSRNode
- * @typedef {import('types/internal').SSRRenderOptions} SSRRenderOptions
- * @typedef {import('types/internal').SSRRenderState} SSRRenderState
+ * @typedef {import('types/internal').SSROptions} SSROptions
+ * @typedef {import('types/internal').SSRState} SSRState
  */
 
 /**
  * @param {{
  *   event: import('types/hooks').RequestEvent;
- *   options: SSRRenderOptions;
- *   state: SSRRenderState;
+ *   options: SSROptions;
+ *   state: SSRState;
  *   $session: any;
  *   route: import('types/internal').SSRPage;
  *   params: Record<string, string>;
@@ -1540,7 +2083,7 @@ async function respond$1(opts) {
 
 /**
  * @param {import('types/internal').SSRComponent} leaf
- * @param {SSRRenderOptions} options
+ * @param {SSROptions} options
  */
 function get_page_config(leaf, options) {
 	// TODO remove for 1.0
@@ -1573,8 +2116,8 @@ function with_cookies(response, set_cookie_headers) {
  * @param {import('types/hooks').RequestEvent} event
  * @param {import('types/internal').SSRPage} route
  * @param {RegExpExecArray} match
- * @param {import('types/internal').SSRRenderOptions} options
- * @param {import('types/internal').SSRRenderState} state
+ * @param {import('types/internal').SSROptions} options
+ * @param {import('types/internal').SSRState} state
  * @param {boolean} ssr
  * @returns {Promise<Response | undefined>}
  */
@@ -1671,7 +2214,9 @@ async function respond(request, options, state = {}) {
 		request,
 		url,
 		params: {},
-		locals: {}
+		// @ts-expect-error this picks up types that belong to the tests
+		locals: {},
+		platform: state.platform
 	};
 
 	// TODO remove this for 1.0
@@ -1733,7 +2278,9 @@ async function respond(request, options, state = {}) {
 				let decoded = decodeURI(event.url.pathname);
 
 				if (options.paths.base) {
-					if (!decoded.startsWith(options.paths.base)) return;
+					if (!decoded.startsWith(options.paths.base)) {
+						return new Response(undefined, { status: 404 });
+					}
 					decoded = decoded.slice(options.paths.base.length) || '/';
 				}
 
@@ -1798,6 +2345,10 @@ async function respond(request, options, state = {}) {
 						ssr
 					});
 				}
+
+				// we can't load the endpoint from our own manifest,
+				// so we need to make an actual HTTP request
+				return await fetch(request);
 			},
 
 			// TODO remove for 1.0

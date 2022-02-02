@@ -1,7 +1,5 @@
 <script context="module">
-	/**
-	 * @type {import('@sveltejs/kit').Load}
-	 */
+	/** @type {import('@sveltejs/kit').Load} */
 	export function load({ error }) {
 		return {
 			props: { message: error.message }
