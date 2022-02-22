@@ -61,6 +61,24 @@ function decode_params(params) {
 	return params;
 }
 
+/** @param {any} body */
+function is_pojo(body) {
+	if (typeof body !== 'object') return false;
+
+	if (body) {
+		if (body instanceof Uint8Array) return false;
+
+		// body could be a node Readable, but we don't want to import
+		// node built-ins, so we use duck typing
+		if (body._readableState && body._writableState && body._events) return false;
+
+		// similarly, it could be a web ReadableStream
+		if (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream) return false;
+	}
+
+	return true;
+}
+
 /** @param {string} body */
 function error(body) {
 	return new Response(body, {
@@ -95,24 +113,16 @@ function is_text(content_type) {
 
 /**
  * @param {import('types/hooks').RequestEvent} event
- * @param {import('types/internal').SSREndpoint} route
- * @param {RegExpExecArray} match
+ * @param {{ [method: string]: import('types/endpoint').RequestHandler }} mod
  * @returns {Promise<Response | undefined>}
  */
-async function render_endpoint(event, route, match) {
-	const mod = await route.load();
-
+async function render_endpoint(event, mod) {
 	/** @type {import('types/endpoint').RequestHandler} */
 	const handler = mod[event.request.method.toLowerCase().replace('delete', 'del')]; // 'delete' is a reserved word
 
 	if (!handler) {
 		return;
 	}
-
-	// we're mutating `request` so that we don't have to do { ...request, params }
-	// on the next line, since that breaks the getters that replace path, query and
-	// origin. We could revert that once we remove the getters
-	event.params = route.params ? decode_params(route.params(match)) : {};
 
 	const response = await handler(event);
 	const preface = `Invalid response from route ${event.url.pathname}`;
@@ -161,24 +171,6 @@ async function render_endpoint(event, route, match) {
 		status,
 		headers
 	});
-}
-
-/** @param {any} body */
-function is_pojo(body) {
-	if (typeof body !== 'object') return false;
-
-	if (body) {
-		if (body instanceof Uint8Array) return false;
-
-		// body could be a node Readable, but we don't want to import
-		// node built-ins, so we use duck typing
-		if (body._readableState && body._writableState && body._events) return false;
-
-		// similarly, it could be a web ReadableStream
-		if (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream) return false;
-	}
-
-	return true;
 }
 
 var chars$1 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$';
@@ -1076,6 +1068,8 @@ async function render_response({
 	/** @type {Array<{ url: string, body: string, json: string }>} */
 	const serialized_data = [];
 
+	let shadow_props;
+
 	let rendered;
 
 	let is_private = false;
@@ -1086,13 +1080,14 @@ async function render_response({
 	}
 
 	if (ssr) {
-		branch.forEach(({ node, loaded, fetched, uses_credentials }) => {
+		branch.forEach(({ node, props, loaded, fetched, uses_credentials }) => {
 			if (node.css) node.css.forEach((url) => stylesheets.add(url));
 			if (node.js) node.js.forEach((url) => modulepreloads.add(url));
 			if (node.styles) Object.entries(node.styles).forEach(([k, v]) => styles.set(k, v));
 
 			// TODO probably better if `fetched` wasn't populated unless `hydrate`
 			if (fetched && page_config.hydrate) serialized_data.push(...fetched);
+			if (props) shadow_props = props;
 
 			if (uses_credentials) is_private = true;
 
@@ -1271,6 +1266,11 @@ async function render_response({
 					return `<script ${attributes}>${json}</script>`;
 				})
 				.join('\n\t');
+
+			if (shadow_props) {
+				// prettier-ignore
+				body += `<script type="application/json" data-type="svelte-props">${s(shadow_props)}</script>`;
+			}
 		}
 
 		if (options.service_worker) {
@@ -1476,6 +1476,7 @@ function is_root_relative(path) {
  *   $session: any;
  *   stuff: Record<string, any>;
  *   is_error: boolean;
+ *   is_leaf: boolean;
  *   status?: number;
  *   error?: Error;
  * }} opts
@@ -1492,6 +1493,7 @@ async function load_node({
 	$session,
 	stuff,
 	is_error,
+	is_leaf,
 	status,
 	error
 }) {
@@ -1513,13 +1515,40 @@ async function load_node({
 	 */
 	let set_cookie_headers = [];
 
+	/** @type {import('types/helper').Either<import('types/endpoint').Fallthrough, import('types/page').LoadOutput>} */
 	let loaded;
 
-	if (module.load) {
+	/** @type {import('types/endpoint').ShadowData} */
+	const shadow = is_leaf
+		? await load_shadow_data(
+				/** @type {import('types/internal').SSRPage} */ (route),
+				event,
+				!!state.prerender
+		  )
+		: {};
+
+	if (shadow.fallthrough) return;
+
+	if (shadow.cookies) {
+		set_cookie_headers.push(...shadow.cookies);
+	}
+
+	if (shadow.error) {
+		loaded = {
+			status: shadow.status,
+			error: shadow.error
+		};
+	} else if (shadow.redirect) {
+		loaded = {
+			status: shadow.status,
+			redirect: shadow.redirect
+		};
+	} else if (module.load) {
 		/** @type {import('types/page').LoadInput | import('types/page').ErrorLoadInput} */
 		const load_input = {
 			url: state.prerender ? create_prerendering_url_proxy(url) : url,
 			params,
+			props: shadow.body || {},
 			get session() {
 				uses_credentials = true;
 				return $session;
@@ -1555,9 +1584,15 @@ async function load_node({
 
 				// merge headers from request
 				for (const [key, value] of event.request.headers) {
-					if (opts.headers.has(key)) continue;
-					if (key === 'cookie' || key === 'authorization' || key === 'if-none-match') continue;
-					opts.headers.set(key, value);
+					if (
+						key !== 'authorization' &&
+						key !== 'cookie' &&
+						key !== 'host' &&
+						key !== 'if-none-match' &&
+						!opts.headers.has(key)
+					) {
+						opts.headers.set(key, value);
+					}
 				}
 
 				opts.headers.set('referer', event.url.href);
@@ -1745,6 +1780,10 @@ async function load_node({
 		if (!loaded) {
 			throw new Error(`load function must return a value${options.dev ? ` (${node.entry})` : ''}`);
 		}
+	} else if (shadow.body) {
+		loaded = {
+			props: shadow.body
+		};
 	} else {
 		loaded = {};
 	}
@@ -1753,14 +1792,148 @@ async function load_node({
 		return;
 	}
 
+	// generate __data.json files when prerendering
+	if (shadow.body && state.prerender) {
+		const pathname = `${event.url.pathname}/__data.json`;
+
+		const dependency = {
+			response: new Response(undefined),
+			body: JSON.stringify(shadow.body)
+		};
+
+		state.prerender.dependencies.set(pathname, dependency);
+	}
+
 	return {
 		node,
+		props: shadow.body,
 		loaded: normalize(loaded),
 		stuff: loaded.stuff || stuff,
 		fetched,
 		set_cookie_headers,
 		uses_credentials
 	};
+}
+
+/**
+ *
+ * @param {import('types/internal').SSRPage} route
+ * @param {import('types/hooks').RequestEvent} event
+ * @param {boolean} prerender
+ * @returns {Promise<import('types/endpoint').ShadowData>}
+ */
+async function load_shadow_data(route, event, prerender) {
+	if (!route.shadow) return {};
+
+	try {
+		const mod = await route.shadow();
+
+		if (prerender && (mod.post || mod.put || mod.del || mod.patch)) {
+			throw new Error('Cannot prerender pages that have shadow endpoints with mutative methods');
+		}
+
+		const method = event.request.method.toLowerCase().replace('delete', 'del');
+		const handler = mod[method];
+
+		if (!handler) {
+			return {
+				status: 405,
+				error: new Error(`${method} method not allowed`)
+			};
+		}
+
+		/** @type {import('types/endpoint').ShadowData} */
+		const data = {
+			status: 200,
+			cookies: [],
+			body: {}
+		};
+
+		if (method !== 'get') {
+			const result = await handler(event);
+
+			if (result.fallthrough) return result;
+
+			const { status = 200, headers = {}, body = {} } = result;
+
+			validate_shadow_output(headers, body);
+
+			if (headers['set-cookie']) {
+				/** @type {string[]} */ (data.cookies).push(...headers['set-cookie']);
+			}
+
+			// Redirects are respected...
+			if (status >= 300 && status < 400) {
+				return {
+					status,
+					redirect: /** @type {string} */ (
+						headers instanceof Headers ? headers.get('location') : headers.location
+					)
+				};
+			}
+
+			// ...but 4xx and 5xx status codes _don't_ result in the error page
+			// rendering for non-GET requests — instead, we allow the page
+			// to render with any validation errors etc that were returned
+			data.status = status;
+			data.body = body;
+		}
+
+		if (mod.get) {
+			const result = await mod.get.call(null, event);
+
+			if (result.fallthrough) return result;
+
+			const { status = 200, headers = {}, body = {} } = result;
+
+			validate_shadow_output(headers, body);
+
+			if (headers['set-cookie']) {
+				/** @type {string[]} */ (data.cookies).push(...headers['set-cookie']);
+			}
+
+			if (status >= 400) {
+				return {
+					status,
+					error: new Error('Failed to load data')
+				};
+			}
+
+			if (status >= 300) {
+				return {
+					status,
+					redirect: /** @type {string} */ (
+						headers instanceof Headers ? headers.get('location') : headers.location
+					)
+				};
+			}
+
+			data.body = { ...body, ...data.body };
+		}
+
+		return data;
+	} catch (e) {
+		return {
+			status: 500,
+			error: coalesce_to_error(e)
+		};
+	}
+}
+
+/**
+ * @param {Headers | Partial<import('types/helper').ResponseHeaders>} headers
+ * @param {import('types/helper').JSONValue} body
+ */
+function validate_shadow_output(headers, body) {
+	if (headers instanceof Headers && headers.has('set-cookie')) {
+		throw new Error(
+			'Shadow endpoint request handler cannot use Headers interface with Set-Cookie headers'
+		);
+	}
+
+	if (!is_pojo(body)) {
+		throw new Error('Body returned from shadow endpoint request handler must be a plain object');
+	}
 }
 
 /**
@@ -1799,7 +1972,8 @@ async function respond_with_error({ event, options, state, $session, status, err
 				node: default_layout,
 				$session,
 				stuff: {},
-				is_error: false
+				is_error: false,
+				is_leaf: false
 			})
 		);
 
@@ -1815,6 +1989,7 @@ async function respond_with_error({ event, options, state, $session, status, err
 				$session,
 				stuff: layout_loaded ? layout_loaded.stuff : {},
 				is_error: true,
+				is_leaf: false,
 				status,
 				error
 			})
@@ -1947,7 +2122,8 @@ async function respond$1(opts) {
 						url: event.url,
 						node,
 						stuff,
-						is_error: false
+						is_error: false,
+						is_leaf: i === nodes.length - 1
 					});
 
 					if (!loaded) return;
@@ -2002,6 +2178,7 @@ async function respond$1(opts) {
 										node: error_node,
 										stuff: node_loaded.stuff,
 										is_error: true,
+										is_leaf: false,
 										status,
 										error
 									})
@@ -2115,13 +2292,12 @@ function with_cookies(response, set_cookie_headers) {
 /**
  * @param {import('types/hooks').RequestEvent} event
  * @param {import('types/internal').SSRPage} route
- * @param {RegExpExecArray} match
  * @param {import('types/internal').SSROptions} options
  * @param {import('types/internal').SSRState} state
  * @param {boolean} ssr
  * @returns {Promise<Response | undefined>}
  */
-async function render_page(event, route, match, options, state, ssr) {
+async function render_page(event, route, options, state, ssr) {
 	if (state.initiator === route) {
 		// infinite request cycle detected
 		return new Response(`Not found: ${event.url.pathname}`, {
@@ -2129,7 +2305,16 @@ async function render_page(event, route, match, options, state, ssr) {
 		});
 	}
 
-	const params = route.params ? decode_params(route.params(match)) : {};
+	if (route.shadow) {
+		const type = negotiate(event.request.headers.get('accept') || 'text/html', [
+			'text/html',
+			'application/json'
+		]);
+
+		if (type === 'application/json') {
+			return render_endpoint(event, await route.shadow());
+		}
+	}
 
 	const $session = await options.hooks.getSession(event);
 
@@ -2139,7 +2324,7 @@ async function render_page(event, route, match, options, state, ssr) {
 		state,
 		$session,
 		route,
-		params,
+		params: event.params, // TODO this is redundant
 		ssr
 	});
 
@@ -2157,6 +2342,60 @@ async function render_page(event, route, match, options, state, ssr) {
 		});
 	}
 }
+
+/**
+ * @param {string} accept
+ * @param {string[]} types
+ */
+function negotiate(accept, types) {
+	const parts = accept
+		.split(',')
+		.map((str, i) => {
+			const match = /([^/]+)\/([^;]+)(?:;q=([0-9.]+))?/.exec(str);
+			if (match) {
+				const [, type, subtype, q = '1'] = match;
+				return { type, subtype, q: +q, i };
+			}
+
+			throw new Error(`Invalid Accept header: ${accept}`);
+		})
+		.sort((a, b) => {
+			if (a.q !== b.q) {
+				return b.q - a.q;
+			}
+
+			if ((a.subtype === '*') !== (b.subtype === '*')) {
+				return a.subtype === '*' ? 1 : -1;
+			}
+
+			if ((a.type === '*') !== (b.type === '*')) {
+				return a.type === '*' ? 1 : -1;
+			}
+
+			return a.i - b.i;
+		});
+
+	let accepted;
+	let min_priority = Infinity;
+
+	for (const mimetype of types) {
+		const [type, subtype] = mimetype.split('/');
+		const priority = parts.findIndex(
+			(part) =>
+				(part.type === type || part.type === '*') &&
+				(part.subtype === subtype || part.subtype === '*')
+		);
+
+		if (priority !== -1 && priority < min_priority) {
+			accepted = mimetype;
+			min_priority = priority;
+		}
+	}
+
+	return accepted;
+}
+
+const DATA_SUFFIX = '/__data.json';
 
 /** @type {import('types/internal').Respond} */
 async function respond(request, options, state = {}) {
@@ -2284,14 +2523,46 @@ async function respond(request, options, state = {}) {
 					decoded = decoded.slice(options.paths.base.length) || '/';
 				}
 
+				const is_data_request = decoded.endsWith(DATA_SUFFIX);
+				if (is_data_request) decoded = decoded.slice(0, -DATA_SUFFIX.length) || '/';
+
 				for (const route of options.manifest._.routes) {
 					const match = route.pattern.exec(decoded);
 					if (!match) continue;
 
-					const response =
-						route.type === 'endpoint'
-							? await render_endpoint(event, route, match)
-							: await render_page(event, route, match, options, state, ssr);
+					event.params = route.params ? decode_params(route.params(match)) : {};
+
+					/** @type {Response | undefined} */
+					let response;
+
+					if (is_data_request && route.type === 'page' && route.shadow) {
+						response = await render_endpoint(event, await route.shadow());
+
+						// since redirects are opaque to the browser, we need to repackage
+						// 3xx responses as 200s with a custom header
+						if (
+							response &&
+							response.status >= 300 &&
+							response.status < 400 &&
+							request.headers.get('x-sveltekit-noredirect') === 'true'
+						) {
+							const location = response.headers.get('location');
+
+							if (location) {
+								response = new Response(undefined, {
+									status: 204,
+									headers: {
+										'x-sveltekit-location': location
+									}
+								});
+							}
+						}
+					} else {
+						response =
+							route.type === 'endpoint'
+								? await render_endpoint(event, await route.load())
+								: await render_page(event, route, options, state, ssr);
+					}
 
 					if (response) {
 						// respond with 304 if etag matches

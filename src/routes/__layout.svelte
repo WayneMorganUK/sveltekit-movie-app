@@ -20,9 +20,6 @@
 	import '../app.css';
 	import Header from '$lib/components/Header.svelte';
 	import { theme } from '$lib/stores/theme';
-	// import { theme } from '$lib/stores/theme-store';
-	// theme.init();
-	// $: console.log('theme ', $theme);
 </script>
 
 <svelte:head>

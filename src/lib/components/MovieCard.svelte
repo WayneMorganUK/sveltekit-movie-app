@@ -5,9 +5,15 @@
 	export let datum: MovieType;
 </script>
 
-<section id="movie-card" class="group perspective-1000 w-44 xl:w-60 my-0.5 xl:my-2 xl:rounded-lg">
-	<div class="relative w-full duration-700 preserve-3d group-hover:rotate-y-180">
-		<div class="top-0 right-0 backface-hidden text-skin-base bg-skin-bg xl:rounded-lg">
+<section id="flip-card" class="group perspective-1000 w-44 xl:w-60 my-0.5 xl:my-2 xl:rounded-lg">
+	<div
+		id="flip-card-inner"
+		class="relative w-full transition-transform-6 preserve-3d group-hover:rotate-y-180"
+	>
+		<div
+			id="flip-card-front"
+			class="top-0 right-0 backface-hidden text-skin-base bg-skin-bg xl:rounded-lg"
+		>
 			<img
 				class="oject-cover w-44 h-[264px] xl:w-60 xl:h-90 xl:rounded-t-lg  text-skin-muted "
 				src={datum.poster_path ? IMAGE_API + datum.poster_path : '/default.jpg'}

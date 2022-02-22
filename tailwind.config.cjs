@@ -85,6 +85,9 @@ const config = {
 				},
 				'.rotate-y-180': {
 					transform: 'rotateY(180deg)'
+				},
+				'.transition-transform-6': {
+					transition: 'transform 0.6s'
 				}
 			};
 
