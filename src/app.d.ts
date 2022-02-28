@@ -2,6 +2,11 @@
 /// <reference types="svelte" />
 /// <reference types="vite/client" />
 
+interface ImportMeta {
+	env: {
+		API: string;
+	};
+}
 type Media = {
 	genres: [Genre];
 };

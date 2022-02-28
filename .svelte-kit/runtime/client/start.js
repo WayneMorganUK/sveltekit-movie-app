@@ -6,6 +6,42 @@ import { writable } from 'svelte/store';
 import { base, set_paths } from '../paths.js';
 import { init } from './singletons.js';
 
+/**
+ * @param {string} path
+ * @param {import('types').TrailingSlash} trailing_slash
+ */
+function normalize_path(path, trailing_slash) {
+	if (path === '/' || trailing_slash === 'ignore') return path;
+
+	if (trailing_slash === 'never') {
+		return path.endsWith('/') ? path.slice(0, -1) : path;
+	} else if (trailing_slash === 'always' && /\/[^./]+$/.test(path)) {
+		return path + '/';
+	}
+
+	return path;
+}
+
+// We track the scroll position associated with each history entry in sessionStorage,
+// rather than on history.state itself, because when navigation is driven by
+// popstate it's too late to update the scroll position associated with the
+// state we're navigating from
+const SCROLL_KEY = 'sveltekit:scroll';
+
+/** @typedef {{ x: number, y: number }} ScrollPosition */
+/** @type {Record<number, ScrollPosition>} */
+let scroll_positions = {};
+try {
+	scroll_positions = JSON.parse(sessionStorage[SCROLL_KEY]);
+} catch {
+	// do nothing
+}
+
+/** @param {number} index */
+function update_scroll_positions(index) {
+	scroll_positions[index] = scroll_state();
+}
+
 function scroll_state() {
 	return {
 		x: pageXOffset,
@@ -38,8 +74,8 @@ class Router {
 	/**
 	 * @param {{
 	 *    base: string;
-	 *    routes: import('types/internal').CSRRoute[];
-	 *    trailing_slash: import('types/internal').TrailingSlash;
+	 *    routes: import('types').CSRRoute[];
+	 *    trailing_slash: import('types').TrailingSlash;
 	 *    renderer: import('./renderer').Renderer
 	 * }} opts
 	 */
@@ -55,9 +91,7 @@ class Router {
 		renderer.router = this;
 
 		this.enabled = true;
-
-		// make it possible to reset focus
-		document.body.setAttribute('tabindex', '-1');
+		this.initialized = false;
 
 		// keeping track of the history index in order to prevent popstate navigation events if needed
 		this.current_history_index = history.state?.['sveltekit:index'] ?? 0;
@@ -66,6 +100,13 @@ class Router {
 			// create initial history entry, so we can return here
 			history.replaceState({ ...history.state, 'sveltekit:index': 0 }, '', location.href);
 		}
+
+		// if we reload the page, or Cmd-Shift-T back to it,
+		// recover scroll position
+		const scroll = scroll_positions[this.current_history_index];
+		if (scroll) scrollTo(scroll.x, scroll.y);
+
+		this.hash_navigating = false;
 
 		this.callbacks = {
 			/** @type {Array<({ from, to, cancel }: { from: URL, to: URL | null, cancel: () => void }) => void>} */
@@ -77,9 +118,7 @@ class Router {
 	}
 
 	init_listeners() {
-		if ('scrollRestoration' in history) {
-			history.scrollRestoration = 'manual';
-		}
+		history.scrollRestoration = 'manual';
 
 		// Adopted from Nuxt.js
 		// Reset scrollRestoration to auto when leaving page, allowing page reload
@@ -104,28 +143,16 @@ class Router {
 			}
 		});
 
-		// Setting scrollRestoration to manual again when returning to this page.
-		addEventListener('load', () => {
-			history.scrollRestoration = 'manual';
-		});
+		addEventListener('visibilitychange', () => {
+			if (document.visibilityState === 'hidden') {
+				update_scroll_positions(this.current_history_index);
 
-		// There's no API to capture the scroll location right before the user
-		// hits the back/forward button, so we listen for scroll events
-
-		/** @type {NodeJS.Timeout} */
-		let scroll_timer;
-		addEventListener('scroll', () => {
-			clearTimeout(scroll_timer);
-			scroll_timer = setTimeout(() => {
-				// Store the scroll location in the history
-				// This will persist even if we navigate away from the site and come back
-				const new_state = {
-					...(history.state || {}),
-					'sveltekit:scroll': scroll_state()
-				};
-				history.replaceState(new_state, document.title, window.location.href);
-				// iOS scroll event intervals happen between 30-150ms, sometimes around 200ms
-			}, 200);
+				try {
+					sessionStorage[SCROLL_KEY] = JSON.stringify(scroll_positions);
+				} catch {
+					// do nothing
+				}
+			}
 		});
 
 		/** @param {Event} event */
@@ -170,12 +197,18 @@ class Router {
 
 			if (!a.href) return;
 
+			const is_svg_a_element = a instanceof SVGAElement;
 			const url = get_href(a);
 			const url_string = url.toString();
 			if (url_string === location.href) {
 				if (!location.hash) event.preventDefault();
 				return;
 			}
+
+			// Ignore if url does not have origin (e.g. `mailto:`, `tel:`.)
+			// MEMO: Without this condition, firefox will open mailer twice.
+			// See: https://github.com/sveltejs/kit/issues/4045
+			if (!is_svg_a_element && url.origin === 'null') return;
 
 			// Ignore if tag has
 			// 1. 'download' attribute
@@ -187,17 +220,20 @@ class Router {
 			}
 
 			// Ignore if <a> has a target
-			if (a instanceof SVGAElement ? a.target.baseVal : a.target) return;
+			if (is_svg_a_element ? a.target.baseVal : a.target) return;
 
-			// Check if new url only differs by hash
-			if (url.href.split('#')[0] === location.href.split('#')[0]) {
-				// Call `pushState` to add url to history so going back works.
-				// Also make a delay, otherwise the browser default behaviour would not kick in
-				setTimeout(() => history.pushState({}, '', url.href));
-				const info = this.parse(url);
-				if (info) {
-					return this.renderer.update(info, [], false);
-				}
+			// Check if new url only differs by hash and use the browser default behavior in that case
+			// This will ensure the `hashchange` event is fired
+			// Removing the hash does a full page navigation in the browser, so make sure a hash is present
+			const [base, hash] = url.href.split('#');
+			if (hash !== undefined && base === location.href.split('#')[0]) {
+				// set this flag to distinguish between navigations triggered by
+				// clicking a hash link and those triggered by popstate
+				this.hash_navigating = true;
+
+				update_scroll_positions(this.current_history_index);
+				this.renderer.update_page_store(new URL(url.href));
+
 				return;
 			}
 
@@ -223,7 +259,7 @@ class Router {
 
 				this._navigate({
 					url: new URL(location.href),
-					scroll: event.state['sveltekit:scroll'],
+					scroll: scroll_positions[event.state['sveltekit:index']],
 					keepfocus: false,
 					chain: [],
 					details: null,
@@ -237,6 +273,21 @@ class Router {
 				});
 			}
 		});
+
+		addEventListener('hashchange', () => {
+			// if the hashchange happened as a result of clicking on a link,
+			// we need to update history, otherwise we have to leave it alone
+			if (this.hash_navigating) {
+				this.hash_navigating = false;
+				history.replaceState(
+					{ ...history.state, 'sveltekit:index': ++this.current_history_index },
+					'',
+					location.href
+				);
+			}
+		});
+
+		this.initialized = true;
 	}
 
 	/**
@@ -259,7 +310,8 @@ class Router {
 				id: url.pathname + url.search,
 				routes: this.routes.filter(([pattern]) => pattern.test(path)),
 				url,
-				path
+				path,
+				initial: !this.initialized
 			};
 		}
 	}
@@ -309,7 +361,7 @@ class Router {
 
 	/**
 	 * @param {URL} url
-	 * @returns {Promise<import('./types').NavigationResult>}
+	 * @returns {Promise<import('./types').NavigationResult | undefined>}
 	 */
 	async prefetch(url) {
 		const info = this.parse(url);
@@ -386,29 +438,17 @@ class Router {
 			});
 		}
 
+		update_scroll_positions(this.current_history_index);
+
 		accepted();
 
-		if (!this.navigating) {
-			dispatchEvent(new CustomEvent('sveltekit:navigation-start'));
-		}
 		this.navigating++;
 
-		let { pathname } = url;
-
-		if (this.trailing_slash === 'never') {
-			if (pathname !== '/' && pathname.endsWith('/')) pathname = pathname.slice(0, -1);
-		} else if (this.trailing_slash === 'always') {
-			const is_file = /** @type {string} */ (url.pathname.split('/').pop()).includes('.');
-			if (!is_file && !pathname.endsWith('/')) pathname += '/';
-		}
+		const pathname = normalize_path(url.pathname, this.trailing_slash);
 
 		info.url = new URL(url.origin + pathname + url.search + url.hash);
 
-		if (details) {
-			const change = details.replaceState ? 0 : 1;
-			details.state['sveltekit:index'] = this.current_history_index += change;
-			history[details.replaceState ? 'replaceState' : 'pushState'](details.state, '', info.url);
-		}
+		const token = (this.navigating_token = {});
 
 		await this.renderer.handle_navigation(info, chain, false, {
 			scroll,
@@ -416,11 +456,18 @@ class Router {
 		});
 
 		this.navigating--;
-		if (!this.navigating) {
-			dispatchEvent(new CustomEvent('sveltekit:navigation-end'));
 
+		// navigation was aborted
+		if (this.navigating_token !== token) return;
+		if (!this.navigating) {
 			const navigation = { from, to: url };
 			this.callbacks.after_navigate.forEach((fn) => fn(navigation));
+		}
+
+		if (details) {
+			const change = details.replaceState ? 0 : 1;
+			details.state['sveltekit:index'] = this.current_history_index += change;
+			history[details.replaceState ? 'replaceState' : 'pushState'](details.state, '', info.url);
 		}
 	}
 }
@@ -438,7 +485,7 @@ function coalesce_to_error(err) {
 
 /**
  * Hash using djb2
- * @param {import('types/hooks').StrictBody} value
+ * @param {import('types').StrictBody} value
  */
 function hash(value) {
 	let hash = 5381;
@@ -454,8 +501,8 @@ function hash(value) {
 }
 
 /**
- * @param {import('types/page').LoadOutput} loaded
- * @returns {import('types/internal').NormalizedLoadOutput}
+ * @param {import('types').LoadOutput} loaded
+ * @returns {import('types').NormalizedLoadOutput}
  */
 function normalize(loaded) {
 	const has_error_status =
@@ -515,11 +562,11 @@ function normalize(loaded) {
 		);
 	}
 
-	return /** @type {import('types/internal').NormalizedLoadOutput} */ (loaded);
+	return /** @type {import('types').NormalizedLoadOutput} */ (loaded);
 }
 
 /**
- * @typedef {import('types/internal').CSRComponent} CSRComponent
+ * @typedef {import('types').CSRComponent} CSRComponent
  * @typedef {{ from: URL; to: URL }} Navigating
  */
 
@@ -608,12 +655,12 @@ function create_updated_store() {
  * @param {RequestInit} [opts]
  */
 function initial_fetch(resource, opts) {
-	const url = typeof resource === 'string' ? resource : resource.url;
+	const url = JSON.stringify(typeof resource === 'string' ? resource : resource.url);
 
-	let selector = `script[data-type="svelte-data"][data-url=${JSON.stringify(url)}]`;
+	let selector = `script[sveltekit\\:data-type="data"][sveltekit\\:data-url=${url}]`;
 
 	if (opts && typeof opts.body === 'string') {
-		selector += `[data-body="${hash(opts.body)}"]`;
+		selector += `[sveltekit\\:data-body="${hash(opts.body)}"]`;
 	}
 
 	const script = document.querySelector(selector);
@@ -662,7 +709,7 @@ class Renderer {
 		/** @type {Map<string, import('./types').NavigationResult>} */
 		this.cache = new Map();
 
-		/** @type {{id: string | null, promise: Promise<import('./types').NavigationResult> | null}} */
+		/** @type {{id: string | null, promise: Promise<import('./types').NavigationResult | undefined> | null}} */
 		this.loading = {
 			id: null,
 			promise: null
@@ -708,11 +755,12 @@ class Renderer {
 	 *   status: number;
 	 *   error: Error;
 	 *   nodes: Array<Promise<CSRComponent>>;
-	 *   url: URL;
 	 *   params: Record<string, string>;
 	 * }} selected
 	 */
-	async start({ status, error, nodes, url, params }) {
+	async start({ status, error, nodes, params }) {
+		const url = new URL(location.href);
+
 		/** @type {Array<import('./types').BranchNode | undefined>} */
 		const branch = [];
 
@@ -724,9 +772,6 @@ class Renderer {
 
 		let error_args;
 
-		// url.hash is empty when coming from the server
-		url.hash = window.location.hash;
-
 		try {
 			for (let i = 0; i < nodes.length; i += 1) {
 				const is_leaf = i === nodes.length - 1;
@@ -734,7 +779,7 @@ class Renderer {
 				let props;
 
 				if (is_leaf) {
-					const serialized = document.querySelector('[data-type="svelte-props"]');
+					const serialized = document.querySelector('script[sveltekit\\:data-type="props"]');
 					if (serialized) {
 						props = JSON.parse(/** @type {string} */ (serialized.textContent));
 					}
@@ -752,6 +797,7 @@ class Renderer {
 
 				if (props) {
 					node.uses.dependencies.add(url.href);
+					node.uses.url = true;
 				}
 
 				branch.push(node);
@@ -830,6 +876,11 @@ class Renderer {
 		const token = (this.token = {});
 		let navigation_result = await this._get_navigation_result(info, no_cache);
 
+		if (!navigation_result) {
+			location.href = info.url.href;
+			return;
+		}
+
 		// abort if user navigated during update
 		if (token !== this.token) return;
 
@@ -844,11 +895,10 @@ class Renderer {
 				});
 			} else {
 				if (this.router) {
-					this.router.goto(
-						new URL(navigation_result.redirect, info.url).href,
-						{ replaceState: true },
-						[...chain, info.url.pathname]
-					);
+					this.router.goto(new URL(navigation_result.redirect, info.url).href, {}, [
+						...chain,
+						info.url.pathname
+					]);
 				} else {
 					location.href = new URL(navigation_result.redirect, location.href).href;
 				}
@@ -879,8 +929,24 @@ class Renderer {
 			const { scroll, keepfocus } = opts;
 
 			if (!keepfocus) {
+				// Reset page selection and focus
+				// We try to mimick browsers' behaviour as closely as possible by targeting the
+				// viewport, but unfortunately it's not a perfect match — e.g. shift-tabbing won't
+				// immediately cycle from the end of the page
+				// See https://html.spec.whatwg.org/multipage/interaction.html#get-the-focusable-area
+				const root = document.documentElement;
+				const tabindex = root.getAttribute('tabindex');
+
 				getSelection()?.removeAllRanges();
-				document.body.focus();
+				root.tabIndex = -1;
+				root.focus();
+
+				// restore `tabindex` as to prevent the document from stealing input from elements
+				if (tabindex !== null) {
+					root.setAttribute('tabindex', tabindex);
+				} else {
+					root.removeAttribute('tabindex');
+				}
 			}
 
 			// need to render the DOM before we can scroll to the rendered elements
@@ -909,6 +975,10 @@ class Renderer {
 		this.autoscroll = true;
 		this.updating = false;
 
+		if (navigation_result.props.page) {
+			this.page = navigation_result.props.page;
+		}
+
 		if (!this.router) return;
 
 		const leaf_node = navigation_result.state.branch[navigation_result.state.branch.length - 1];
@@ -921,7 +991,7 @@ class Renderer {
 
 	/**
 	 * @param {import('./types').NavigationInfo} info
-	 * @returns {Promise<import('./types').NavigationResult>}
+	 * @returns {Promise<import('./types').NavigationResult | undefined>}
 	 */
 	load(info) {
 		this.loading.promise = this._get_navigation_result(info, false);
@@ -946,12 +1016,20 @@ class Renderer {
 		return this.invalidating;
 	}
 
+	/** @param {URL} url */
+	update_page_store(url) {
+		this.stores.page.set({ ...this.page, url });
+		this.stores.page.notify();
+	}
+
 	/** @param {import('./types').NavigationResult} result */
 	_init(result) {
 		this.current = result.state;
 
 		const style = document.querySelector('style[data-svelte]');
 		if (style) style.remove();
+
+		this.page = result.props.page;
 
 		this.root = new this.Root({
 			target: this.target,
@@ -973,7 +1051,7 @@ class Renderer {
 	/**
 	 * @param {import('./types').NavigationInfo} info
 	 * @param {boolean} no_cache
-	 * @returns {Promise<import('./types').NavigationResult>}
+	 * @returns {Promise<import('./types').NavigationResult | undefined>}
 	 */
 	async _get_navigation_result(info, no_cache) {
 		if (this.loading.id === info.id && this.loading.promise) {
@@ -1006,11 +1084,13 @@ class Renderer {
 			if (result) return result;
 		}
 
-		return await this._load_error({
-			status: 404,
-			error: new Error(`Not found: ${info.url.pathname}`),
-			url: info.url
-		});
+		if (info.initial) {
+			return await this._load_error({
+				status: 404,
+				error: new Error(`Not found: ${info.url.pathname}`),
+				url: info.url
+			});
+		}
 	}
 
 	/**
@@ -1147,7 +1227,7 @@ class Renderer {
 		if (module.load) {
 			const { started } = this;
 
-			/** @type {import('types/page').LoadInput | import('types/page').ErrorLoadInput} */
+			/** @type {import('types').LoadInput | import('types').ErrorLoadInput} */
 			const load_input = {
 				params: uses_params,
 				props: props || {},
@@ -1182,8 +1262,8 @@ class Renderer {
 			}
 
 			if (error) {
-				/** @type {import('types/page').ErrorLoadInput} */ (load_input).status = status;
-				/** @type {import('types/page').ErrorLoadInput} */ (load_input).error = error;
+				/** @type {import('types').ErrorLoadInput} */ (load_input).status = status;
+				/** @type {import('types').ErrorLoadInput} */ (load_input).error = error;
 			}
 
 			const loaded = await module.load.call(null, load_input);
@@ -1265,12 +1345,17 @@ class Renderer {
 					/** @type {Record<string, any>} */
 					let props = {};
 
-					if (has_shadow && i === a.length - 1) {
-						const res = await fetch(`${url.pathname}/__data.json`, {
-							headers: {
-								'x-sveltekit-noredirect': 'true'
+					const is_shadow_page = has_shadow && i === a.length - 1;
+
+					if (is_shadow_page) {
+						const res = await fetch(
+							`${url.pathname}${url.pathname.endsWith('/') ? '' : '/'}__data.json${url.search}`,
+							{
+								headers: {
+									'x-sveltekit-load': 'true'
+								}
 							}
-						});
+						);
 
 						if (res.ok) {
 							const redirect = res.headers.get('x-sveltekit-location');
@@ -1300,25 +1385,31 @@ class Renderer {
 						});
 					}
 
-					if (node && node.loaded) {
-						if (node.loaded.fallthrough) {
-							return;
-						}
-						if (node.loaded.error) {
-							status = node.loaded.status;
-							error = node.loaded.error;
+					if (node) {
+						if (is_shadow_page) {
+							node.uses.url = true;
 						}
 
-						if (node.loaded.redirect) {
-							return {
-								redirect: node.loaded.redirect,
-								props: {},
-								state: this.current
-							};
-						}
+						if (node.loaded) {
+							if (node.loaded.fallthrough) {
+								return;
+							}
+							if (node.loaded.error) {
+								status = node.loaded.status;
+								error = node.loaded.error;
+							}
 
-						if (node.loaded.stuff) {
-							stuff_changed = true;
+							if (node.loaded.redirect) {
+								return {
+									redirect: node.loaded.redirect,
+									props: {},
+									state: this.current
+								};
+							}
+
+							if (node.loaded.stuff) {
+								stuff_changed = true;
+							}
 						}
 					}
 				} else {
@@ -1447,21 +1538,16 @@ class Renderer {
  *   session: any;
  *   route: boolean;
  *   spa: boolean;
- *   trailing_slash: import('types/internal').TrailingSlash;
+ *   trailing_slash: import('types').TrailingSlash;
  *   hydrate: {
  *     status: number;
  *     error: Error;
- *     nodes: Array<Promise<import('types/internal').CSRComponent>>;
- *     url: URL;
+ *     nodes: Array<Promise<import('types').CSRComponent>>;
  *     params: Record<string, string>;
  *   };
  * }} opts
  */
 async function start({ paths, target, session, route, spa, trailing_slash, hydrate }) {
-	if (import.meta.env.DEV && !target) {
-		throw new Error('Missing target element. See https://kit.svelte.dev/docs#configuration-target');
-	}
-
 	const renderer = new Renderer({
 		Root,
 		fallback,

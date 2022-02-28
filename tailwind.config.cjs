@@ -5,7 +5,8 @@ const config = {
 		extend: {
 			borderColor: {
 				skin: {
-					border: 'var(--color-border)'
+					border: 'var(--color-border)',
+					focus: 'var(--color-text-selected)'
 				}
 			},
 			fill: {

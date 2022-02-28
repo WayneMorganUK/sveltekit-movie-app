@@ -21,7 +21,7 @@
 	>
 		<input
 			label="search"
-			class="w-24 h-8 px-2 text-lg bg-transparent border-2 rounded-full lg:w-48 placeholder-text-skin-base::placeholder border-skin-border"
+			class="w-24 h-8 px-2 text-lg bg-transparent border-2 rounded-full outline-none focus:border-skin-focus lg:w-48 placeholder-text-skin-base::placeholder border-skin-border"
 			type="text"
 			placeholder="Search..."
 			bind:value={searchTerm}

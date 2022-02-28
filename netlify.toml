@@ -9,3 +9,6 @@
 [functions]
   directory = "functions"
   node_bundler = "esbuild"
+
+[[plugins]]
+package = "@aaronbassett/newrelic-netlify-plugin"
