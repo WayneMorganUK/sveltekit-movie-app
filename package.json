@@ -12,7 +12,6 @@
 		"format": "prettier --ignore-path .gitignore --write --plugin-search-dir=. ."
 	},
 	"devDependencies": {
-		"@aaronbassett/newrelic-netlify-plugin": "^0.1.0-alpha-28",
 		"@sveltejs/adapter-auto": "next",
 		"@sveltejs/kit": "next",
 		"@tailwindcss/line-clamp": "^0.3.1",
