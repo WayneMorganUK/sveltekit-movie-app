@@ -3,10 +3,7 @@
 	import Selector from '$lib/utilities/Selector.svelte';
 	import { goto } from '$app/navigation';
 
-	import { media_type } from '$lib/stores/store';
-
 	function toggleHome() {
-		$media_type = 'movie';
 		goto('/');
 	}
 </script>

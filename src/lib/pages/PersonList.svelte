@@ -1,15 +1,15 @@
 <script lang="ts">
 	import PersonCard from '$lib/components/PersonCard.svelte';
 	import Skeleton from '$lib/utilities/Skeleton.svelte';
-	import { data } from '$lib/stores/store';
-	let PersonData = $data as PersonType[];
+	export let data;
+	let PersonData = data as PersonType[];
 </script>
 
 <section
 	id="person-list"
-	class="bg-skin-tertiary flex flex-wrap justify-around max-w-7xl xl:mt-2 mx-auto xl:rounded-2xl"
+	class="flex flex-wrap justify-around mx-auto bg-skin-tertiary max-w-7xl xl:mt-2 xl:rounded-2xl"
 >
-	{#if $data}
+	{#if data}
 		{#each PersonData as datum}
 			<PersonCard {datum} />
 		{/each}

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { media_type, selected } from '$lib/stores/store';
 	import { goto } from '$app/navigation';
 	import Genre from '$lib/components/Genre.svelte';
 
@@ -21,12 +20,10 @@
 		<button
 			aria-label="Movies"
 			on:click|preventDefault={toggleMovie}
-			class:text-skin-selected={$media_type === 'movie'}
 			class="inline-flex items-center py-2 font-semibold rounded text-skin-inverted hover:text-skin-selected"
 		>
 			<svg
 				class=" w-6 h-6 fill-inverted group-hover:fill-selected"
-				class:fill-selected={$media_type === 'movie'}
 				aria-hidden="true"
 				role="img"
 				style="vertical-align: -0.125em;"
@@ -47,13 +44,11 @@
 		<button
 			aria-label="TV Shows"
 			on:click|preventDefault={toggleTv}
-			class:text-skin-selected={$media_type === 'tv'}
 			class="inline-flex items-center py-2 font-semibold rounded text-skin-inverted hover:text-skin-selected"
 		>
 			<span>
 				<svg
 					class=" w-6 h-6 fill-inverted group-hover:fill-selected"
-					class:fill-selected={$media_type === 'tv'}
 					aria-hidden="true"
 					role="img"
 					style="vertical-align: -0.125em;"
@@ -75,13 +70,11 @@
 		<button
 			aria-label="People"
 			on:click|preventDefault={togglePerson}
-			class:text-skin-selected={$media_type === 'person'}
 			class="inline-flex items-center py-2 font-semibold rounded text-skin-inverted hover:text-skin-selected"
 		>
 			<span
 				><svg
 					class=" w-6 h-6 stroke-inverted group-hover:stroke-selected"
-					class:stroke-selected={$media_type === 'person'}
 					aria-hidden="true"
 					role="img"
 					style="vertical-align: -0.125em;"
@@ -102,33 +95,31 @@
 		</button>
 	</div>
 </div>
-{#key $selected}
-	<div class="pl-4 xl:pl-8 ">
-		<div class="relative z-50 inline-block group">
-			<button
-				aria-label="Genres"
-				class="inline-flex items-center py-2 font-semibold rounded text-skin-inverted hover:text-skin-selected"
-			>
-				<span>
-					<svg
-						class=" align-middle w-6 h-6 fill-inverted group-hover:fill-selected"
-						aria-hidden="true"
-						role="img"
-						preserveAspectRatio="xMidYMid meet"
-						viewBox="0 0 14 14"
-					>
-						<path
-							d="M2 1a1 1 0 0 0-1 1v4.586a1 1 0 0 0 .293.707l7 7a1 1 0 0 0 1.414 0l4.586-4.586a1 1 0 0 0 0-1.414l-7-7A1 1 0 0 0 6.586 1H2zm4 3.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"
-						/>
-					</svg>
-				</span>
-				<span class="hidden mx-2 xl:block">Genres</span>
-			</button>
-			<ul
-				class="fixed left-0 hidden rounded xl:absolute bg-skin-primary text-skin-base group-hover:block"
-			>
-				<Genre />
-			</ul>
-		</div>
+<div class="pl-4 xl:pl-8 ">
+	<div class="relative z-50 inline-block group">
+		<button
+			aria-label="Genres"
+			class="inline-flex items-center py-2 font-semibold rounded text-skin-inverted hover:text-skin-selected"
+		>
+			<span>
+				<svg
+					class=" align-middle w-6 h-6 fill-inverted group-hover:fill-selected"
+					aria-hidden="true"
+					role="img"
+					preserveAspectRatio="xMidYMid meet"
+					viewBox="0 0 14 14"
+				>
+					<path
+						d="M2 1a1 1 0 0 0-1 1v4.586a1 1 0 0 0 .293.707l7 7a1 1 0 0 0 1.414 0l4.586-4.586a1 1 0 0 0 0-1.414l-7-7A1 1 0 0 0 6.586 1H2zm4 3.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"
+					/>
+				</svg>
+			</span>
+			<span class="hidden mx-2 xl:block">Genres</span>
+		</button>
+		<ul
+			class="fixed left-0 hidden rounded xl:absolute bg-skin-primary text-skin-base group-hover:block"
+		>
+			<Genre />
+		</ul>
 	</div>
-{/key}
+</div>

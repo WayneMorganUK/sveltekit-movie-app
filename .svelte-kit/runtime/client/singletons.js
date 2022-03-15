@@ -1,21 +1,13 @@
-/**
- * The router is nullable, but not typed that way for ease-of-use
- * @type {import('./router').Router}
- */
-let router;
-
-/** @type {import('./renderer').Renderer} */
-let renderer;
+/** @type {import('./types').Client} */
+let client;
 
 /**
  * @param {{
- *   router: import('./router').Router?;
- *   renderer: import('./renderer').Renderer;
+ *   client: import('./types').Client;
  * }} opts
  */
 function init(opts) {
-	router = /** @type {import('../client/router').Router} */ (opts.router);
-	renderer = opts.renderer;
+	client = opts.client;
 }
 
-export { init, renderer, router };
+export { client, init };

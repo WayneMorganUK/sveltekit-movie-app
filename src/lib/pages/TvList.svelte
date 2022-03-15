@@ -1,15 +1,15 @@
 <script lang="ts">
 	import TvCard from '$lib/components/TvCard.svelte';
-	import { data } from '$lib/stores/store';
 	import Skeleton from '$lib/utilities/Skeleton.svelte';
-	let TvData = $data as TvType[];
+	export let data;
+	let TvData = data as TvType[];
 </script>
 
 <section
-	id="movie-list"
-	class="bg-skin-tertiary flex flex-wrap justify-around max-w-7xl mx-auto xl:mt-2 xl:rounded-2xl"
+	id="tv-list"
+	class="flex flex-wrap justify-around mx-auto bg-skin-tertiary max-w-7xl xl:mt-2 xl:rounded-2xl"
 >
-	{#if $data}
+	{#if data}
 		{#each TvData as datum}
 			<TvCard {datum} />
 		{/each}

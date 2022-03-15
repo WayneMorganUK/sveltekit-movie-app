@@ -46,7 +46,3 @@ function _theme() {
 }
 
 export const theme = _theme();
-
-// the docs on svelte stores can be found here if this is a bit confusing
-// essentially you can use these to share state between many components
-// https://svelte.dev/docs#svelte_store

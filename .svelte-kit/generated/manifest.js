@@ -7,7 +7,7 @@ const c = [
 	() => import("..\\..\\src\\routes\\episode\\[id]\\[season_number]\\[episode_number].svelte"),
 	() => import("..\\..\\src\\routes\\seasons\\[id]\\[season_number].svelte"),
 	() => import("..\\..\\src\\routes\\person\\[id].svelte"),
-	() => import("..\\..\\src\\routes\\search\\[id].svelte"),
+	() => import("..\\..\\src\\routes\\search\\[media]\\[id].svelte"),
 	() => import("..\\..\\src\\routes\\genre\\[media]\\[id].svelte"),
 	() => import("..\\..\\src\\routes\\movie\\[id].svelte"),
 	() => import("..\\..\\src\\routes\\tv\\[id].svelte")
@@ -17,13 +17,13 @@ const d = decodeURIComponent;
 
 export const routes = [
 	// src/routes/index.svelte
-	[/^\/$/, [c[0], c[2]], [c[1]]],
+	[/^\/$/, [c[0], c[2]], [c[1]], null, ''],
 
 	// src/routes/NotFound.svelte
 	[/^\/NotFound\/?$/, [c[0], c[3]], [c[1]]],
 
 	// src/routes/trending/[media].svelte
-	[/^\/trending\/([^/]+?)\/?$/, [c[0], c[4]], [c[1]], (m) => ({ media: d(m[1])})],
+	[/^\/trending\/([^/]+?)\/?$/, [c[0], c[4]], [c[1]], (m) => ({ media: d(m[1])}), 'trending/[media]'],
 
 	// src/routes/episode/[id]/[season_number]/[episode_number].svelte
 	[/^\/episode\/([^/]+?)\/([^/]+?)\/([^/]+?)\/?$/, [c[0], c[5]], [c[1]], (m) => ({ id: d(m[1]), season_number: d(m[2]), episode_number: d(m[3])})],
@@ -32,19 +32,19 @@ export const routes = [
 	[/^\/seasons\/([^/]+?)\/([^/]+?)\/?$/, [c[0], c[6]], [c[1]], (m) => ({ id: d(m[1]), season_number: d(m[2])})],
 
 	// src/routes/person/[id].svelte
-	[/^\/person\/([^/]+?)\/?$/, [c[0], c[7]], [c[1]], (m) => ({ id: d(m[1])})],
+	[/^\/person\/([^/]+?)\/?$/, [c[0], c[7]], [c[1]], (m) => ({ id: d(m[1])}), 'person/[id]'],
 
-	// src/routes/search/[id].svelte
-	[/^\/search\/([^/]+?)\/?$/, [c[0], c[8]], [c[1]], (m) => ({ id: d(m[1])})],
+	// src/routes/search/[media]/[id].svelte
+	[/^\/search\/([^/]+?)\/([^/]+?)\/?$/, [c[0], c[8]], [c[1]], (m) => ({ media: d(m[1]), id: d(m[2])}), 'search/[media]/[id]'],
 
 	// src/routes/genre/[media]/[id].svelte
-	[/^\/genre\/([^/]+?)\/([^/]+?)\/?$/, [c[0], c[9]], [c[1]], (m) => ({ media: d(m[1]), id: d(m[2])})],
+	[/^\/genre\/([^/]+?)\/([^/]+?)\/?$/, [c[0], c[9]], [c[1]], (m) => ({ media: d(m[1]), id: d(m[2])}), 'genre/[media]/[id]'],
 
 	// src/routes/movie/[id].svelte
-	[/^\/movie\/([^/]+?)\/?$/, [c[0], c[10]], [c[1]], (m) => ({ id: d(m[1])})],
+	[/^\/movie\/([^/]+?)\/?$/, [c[0], c[10]], [c[1]], (m) => ({ id: d(m[1])}), 'movie/[id]'],
 
 	// src/routes/tv/[id].svelte
-	[/^\/tv\/([^/]+?)\/?$/, [c[0], c[11]], [c[1]], (m) => ({ id: d(m[1])})]
+	[/^\/tv\/([^/]+?)\/?$/, [c[0], c[11]], [c[1]], (m) => ({ id: d(m[1])}), 'tv/[id]']
 ];
 
 // we import the root layout/error components eagerly, so that

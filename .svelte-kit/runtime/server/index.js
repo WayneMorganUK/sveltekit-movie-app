@@ -1685,7 +1685,7 @@ async function load_node({
 
 					if (options.read) {
 						const type = is_asset
-							? options.manifest._.mime[filename.slice(filename.lastIndexOf('.'))]
+							? options.manifest.mimeTypes[filename.slice(filename.lastIndexOf('.'))]
 							: 'text/html';
 
 						response = new Response(options.read(file), {
@@ -1720,7 +1720,9 @@ async function load_node({
 
 					response = await respond(new Request(new URL(requested, event.url).href, opts), options, {
 						fetched: requested,
-						initiator: route
+						getClientAddress: state.getClientAddress,
+						initiator: route,
+						prerender: state.prerender
 					});
 
 					if (state.prerender) {
@@ -2184,12 +2186,16 @@ async function respond$1(opts) {
 
 	let page_config = get_page_config(leaf, options);
 
-	if (!leaf.prerender && state.prerender && !state.prerender.all) {
-		// if the page has `export const prerender = true`, continue,
-		// otherwise bail out at this point
-		return new Response(undefined, {
-			status: 204
-		});
+	if (state.prerender) {
+		// if the page isn't marked as prerenderable (or is explicitly
+		// marked NOT prerenderable, if `prerender.default` is `true`),
+		// then bail out at this point
+		const should_prerender = leaf.prerender ?? state.prerender.default;
+		if (!should_prerender) {
+			return new Response(undefined, {
+				status: 204
+			});
+		}
 	}
 
 	/** @type {Array<Loaded>} */
@@ -2499,7 +2505,7 @@ const DATA_SUFFIX = '/__data.json';
 const default_transform = ({ html }) => html;
 
 /** @type {import('types').Respond} */
-async function respond(request, options, state = {}) {
+async function respond(request, options, state) {
 	const url = new URL(request.url);
 
 	const normalized = normalize_path(url.pathname, options.trailing_slash);
@@ -2540,12 +2546,26 @@ async function respond(request, options, state = {}) {
 
 	/** @type {import('types').RequestEvent} */
 	const event = {
-		request,
-		url,
-		params: {},
-		// @ts-expect-error this picks up types that belong to the tests
+		get clientAddress() {
+			if (!state.getClientAddress) {
+				throw new Error(
+					`${
+						import.meta.env.VITE_SVELTEKIT_ADAPTER_NAME
+					} does not specify getClientAddress. Please raise an issue`
+				);
+			}
+
+			Object.defineProperty(event, 'clientAddress', {
+				value: state.getClientAddress()
+			});
+
+			return event.clientAddress;
+		},
 		locals: {},
-		platform: state.platform
+		params: {},
+		platform: state.platform,
+		request,
+		url
 	};
 
 	// TODO remove this for 1.0
@@ -2638,7 +2658,17 @@ async function respond(request, options, state = {}) {
 					event.url = new URL(event.url.origin + normalized + event.url.search);
 				}
 
+				// `key` will be set if this request came from a client-side navigation
+				// to a page with a matching endpoint
+				const key = request.headers.get('x-sveltekit-load');
+
 				for (const route of options.manifest._.routes) {
+					if (key) {
+						// client is requesting data for a specific endpoint
+						if (route.type !== 'page') continue;
+						if (route.key !== key) continue;
+					}
+
 					const match = route.pattern.exec(decoded);
 					if (!match) continue;
 
@@ -2651,7 +2681,7 @@ async function respond(request, options, state = {}) {
 						response = await render_endpoint(event, await route.shadow());
 
 						// loading data for a client-side transition is a special case
-						if (request.headers.get('x-sveltekit-load') === 'true') {
+						if (key) {
 							if (response) {
 								// since redirects are opaque to the browser, we need to repackage
 								// 3xx responses as 200s with a custom header
@@ -2668,9 +2698,9 @@ async function respond(request, options, state = {}) {
 									}
 								}
 							} else {
-								// TODO ideally, the client wouldn't request this data
-								// in the first place (at least in production)
-								response = new Response('{}', {
+								// fallthrough
+								response = new Response(undefined, {
+									status: 204,
 									headers: {
 										'content-type': 'application/json'
 									}
@@ -2735,6 +2765,10 @@ async function respond(request, options, state = {}) {
 						error: new Error(`Not found: ${event.url.pathname}`),
 						resolve_opts
 					});
+				}
+
+				if (state.prerender) {
+					return new Response('not found', { status: 404 });
 				}
 
 				// we can't load the endpoint from our own manifest,

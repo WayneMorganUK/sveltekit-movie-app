@@ -8,49 +8,11 @@
 </script>
 
 <script lang="ts">
-	// import { dev } from '$app/env';
 	export let message: string;
-	// export let error: { message: any; stack: any };
-	// const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-	// const title = offline ? 'Offline' : status;
-	// const message = offline ? 'Find the internet and try again' : error.message;
 </script>
-
-<!-- <svelte:head>
-	<title>{title}</title>
-</svelte:head> -->
-
-<!-- <h1>{title}</h1> -->
 
 <div class=" text-center mb-16 ">
 	<h2>Oops</h2>
 	<p>{message}</p>
 	<a href="/">Return to the home screen</a>
 </div>
-
-<!-- {#if error.stack}
-	 {#if !dev && error.stack} 
-	<h2>This page does not exist</h2>
-
-	<pre>{error.stack}</pre>
-{/if} -->
-<!-- <style>
-	h1,
-	p {
-		margin: 0 auto;
-	}
-	h1 {
-		font-size: 2.8em;
-		font-weight: 700;
-		margin: 0 0 0.5em 0;
-	}
-	p {
-		margin: 1em auto;
-	}
-	@media (min-width: 480px) {
-		h1 {
-			font-size: 4em;
-		}
-	}
-</style>
--->

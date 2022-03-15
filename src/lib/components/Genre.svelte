@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { tv_genres, movie_genres, media_type, selected } from '$lib/stores/store';
+	import { tv_genres, movie_genres, selected } from '$lib/stores/store';
 </script>
 
 <div class="w-full bg-skin-primary">
@@ -9,7 +9,7 @@
 			<h6 class="flex flex-ruppercase text-skin-base">
 				<span class="mr-2">
 					<svg
-						class=" w-6 h-6 fill-base"
+						class="w-6 h-6 fill-base"
 						aria-hidden="true"
 						role="img"
 						style="vertical-align: -0.125em;"
@@ -29,7 +29,7 @@
 						<button
 							aria-label={genre.name}
 							class="block p-1 hover:bg-skin-primary text-skin-base hover:text-skin-selected whitespace-nowrap"
-							class:bg-selected={$selected === genre.id && $media_type === 'movie'}
+							class:bg-selected={$selected === genre.id}
 							on:click|preventDefault={() => {
 								$selected = genre.id;
 								goto(`/genre/movie/${genre.id}`);
@@ -45,7 +45,7 @@
 			<h6 class="flex flex-row uppercase text-skin-base">
 				<span class="mr-2">
 					<svg
-						class=" w-6 h-6 fill-base"
+						class="w-6 h-6 fill-base"
 						aria-hidden="true"
 						role="img"
 						style="vertical-align: -0.125em;"
@@ -64,7 +64,7 @@
 					<li class="flex">
 						<button
 							class="block p-1 hover:bg-skin-primary text-skin-base hover:text-skin-selected whitespace-nowrap"
-							class:bg-selected={$selected === genre.id && $media_type === 'tv'}
+							class:bg-selected={$selected === genre.id}
 							on:click|preventDefault={() => {
 								$selected = genre.id;
 								goto(`/genre/tv/${genre.id}`);

@@ -241,6 +241,7 @@ type CastType = {
 	genre_ids: Array<number>;
 	character: string;
 	name: string;
+	profile_path: string;
 	poster_path: string | null;
 	vote_count: number;
 	vote_average: number;

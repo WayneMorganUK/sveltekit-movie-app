@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { media_type, show_name } from '$lib/stores/store';
 	import ProgressBar from '$lib/utilities/ProgressBar.svelte';
 	const IMAGE_API = 'https://image.tmdb.org/t/p/w300';
 	export let datum: TvType;
@@ -30,7 +29,7 @@
 		</div>
 		<a
 			class="absolute top-0 bottom-0 right-0 z-10 w-full h-full p-2 overflow-auto text-sm duration-300 ease-in-out xl:rounded-lg backface-hidden text-skin-base bg-skin-bg text-decoration-none rotate-y-180 movie-back"
-			href={`/${$media_type}/${datum.id}`}
+			href={`/tv/${datum.id}`}
 		>
 			<h6 class="mt-1 uppercase xl:rounded xl:text-xl text-skin-base bg-secondary">Overview</h6>
 			<p class="mt-1 md:text-base">{datum.overview}</p>

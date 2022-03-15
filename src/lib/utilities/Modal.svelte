@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { trailer_key, video_site } from '$lib/stores/store';
+	// import { trailer_key, video_site } from '$lib/stores/store';
+	export let trailer_key;
+	export let video_site;
 	let shown = false;
 	export function show(): void {
 		shown = true;
@@ -12,22 +14,22 @@
 {#if shown}
 	<section id="trailer" class="fixed top-0 bottom-0 left-0 right-0 z-50 bg-gray-800 bg-opacity-60">
 		<div class="absolute top-0 left-0 w-full h-full bg-contain">
-			{#if $video_site === 'YouTube'}
+			{#if video_site === 'YouTube'}
 				<iframe
 					class="absolute top-0 left-0 w-full h-full bg-contain iframe"
 					title="Trailer"
-					src="https://www.youtube.com/embed/{$trailer_key}?rel=0"
+					src="https://www.youtube.com/embed/{trailer_key}?rel=0"
 					allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
 					width="1080"
 					allowfullscreen
 				>
 					<track default kind="captions" />
 				</iframe>
-			{:else if $video_site === 'Vimeo'}
+			{:else if video_site === 'Vimeo'}
 				<iframe
 					class="absolute top-0 left-0 w-full h-full bg-contain iframe"
 					title="trailer"
-					src="https://player.vimeo.com/video/{$trailer_key}"
+					src="https://player.vimeo.com/video/{trailer_key}"
 					frameborder="0"
 					allow="autoplay; fullscreen"
 					allowfullscreen
