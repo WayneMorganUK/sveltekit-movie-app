@@ -15,6 +15,7 @@
 	}
 </script>
 
+<!-- Movie Icon -->
 <div class="pl-4 xl:pl-8 ">
 	<div class="relative z-50 inline-block group">
 		<button
@@ -39,6 +40,7 @@
 	</div>
 </div>
 
+<!-- TV Icon -->
 <div class="pl-4 xl:pl-8 ">
 	<div class="relative z-50 inline-block group">
 		<button
@@ -65,6 +67,7 @@
 	</div>
 </div>
 
+<!-- Person icon  -->
 <div class="pl-4 xl:pl-8 ">
 	<div class="relative z-50 inline-block group">
 		<button
@@ -95,6 +98,8 @@
 		</button>
 	</div>
 </div>
+
+<!-- Genre Icon + dropdown -->
 <div class="pl-4 xl:pl-8 ">
 	<div class="relative z-50 inline-block group">
 		<button
