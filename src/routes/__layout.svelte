@@ -19,6 +19,7 @@
 <script lang="ts">
 	import '../app.css';
 	import Header from '$lib/components/Header.svelte';
+	import Footer from '$lib/components/Footer.svelte';
 	import { theme } from '$lib/stores/theme';
 </script>
 
@@ -43,6 +44,7 @@
 	<div class="fixed top-0 w-full min-h-screen -z-50 bg-gradient-to-r from-skin-bg to-skin-border" />
 
 	<Header />
+	<Footer />
 	<section class="mx-auto mt-12 md:mt-[60px] max-w-7xl">
 		<slot />
 	</section>
