@@ -9,13 +9,13 @@
 	export let total_pages = 1;
 	export let genres: number = undefined;
 	export let searching: string = undefined;
-	export let media_type;
+	export let media_type: MediaType;
 	let current_page = 1;
 
 	async function moreData() {
 		let res: Response;
 		if (searching) {
-			res = await fetch('../api/postSearch', {
+			res = await fetch('../../api/postSearch', {
 				headers: {
 					'Content-Type': 'application/json'
 				},

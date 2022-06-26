@@ -12,7 +12,8 @@ export async function get({ params }) {
     return {
         body: {
             data: newdata,
-            total_pages: _total_pages
+            total_pages: _total_pages,
+            media_type: params.media
         }
     };
 }

@@ -33,7 +33,7 @@
 			{@html media.name}
 
 			<div
-				class="hidden group-hover:block w-8 relative ml-2 items-center px-4 border-2 -left-4 border-skin-border bg-skin-primary text-skin-base"
+				class=" mt-[5px] hidden group-hover:block w-8 relative ml-2 items-center px-4 border-2 -left-4 border-skin-border bg-skin-primary text-skin-base"
 			>
 				{#each mediaSelectItems as item}
 					<li
