@@ -16,7 +16,7 @@
 </script>
 
 <!-- Movie Icon -->
-<div class="pl-4 xl:pl-8 ">
+<div class="pl-3 xl:pl-8 ">
 	<div class="relative z-50 inline-block group">
 		<button
 			aria-label="Movies"
@@ -24,7 +24,7 @@
 			class="inline-flex items-center py-2 font-semibold rounded text-skin-inverted hover:text-skin-selected"
 		>
 			<svg
-				class=" w-6 h-6 fill-inverted group-hover:fill-selected"
+				class=" w-5 h-5 fill-inverted group-hover:fill-selected"
 				aria-hidden="true"
 				role="img"
 				style="vertical-align: -0.125em;"
@@ -41,7 +41,7 @@
 </div>
 
 <!-- TV Icon -->
-<div class="pl-4 xl:pl-8 ">
+<div class="pl-3 xl:pl-8 ">
 	<div class="relative z-50 inline-block group">
 		<button
 			aria-label="TV Shows"
@@ -50,7 +50,7 @@
 		>
 			<span>
 				<svg
-					class=" w-6 h-6 fill-inverted group-hover:fill-selected"
+					class=" w-5 h-5 fill-inverted group-hover:fill-selected"
 					aria-hidden="true"
 					role="img"
 					style="vertical-align: -0.125em;"
@@ -68,7 +68,7 @@
 </div>
 
 <!-- Person icon  -->
-<div class="pl-4 xl:pl-8 ">
+<div class="pl-3 xl:pl-8 ">
 	<div class="relative z-50 inline-block group">
 		<button
 			aria-label="People"
@@ -77,7 +77,7 @@
 		>
 			<span
 				><svg
-					class=" w-6 h-6 stroke-inverted group-hover:stroke-selected"
+					class=" w-5 h-5 stroke-inverted group-hover:stroke-selected"
 					aria-hidden="true"
 					role="img"
 					style="vertical-align: -0.125em;"
@@ -100,7 +100,7 @@
 </div>
 
 <!-- Genre Icon + dropdown -->
-<div class="pl-4 xl:pl-8 ">
+<div class="pl-3 xl:pl-8 ">
 	<div class="relative z-50 inline-block group">
 		<button
 			aria-label="Genres"
@@ -108,7 +108,7 @@
 		>
 			<span>
 				<svg
-					class=" align-middle w-6 h-6 fill-inverted group-hover:fill-selected"
+					class=" align-middle w-5 h-5 fill-inverted group-hover:fill-selected"
 					aria-hidden="true"
 					role="img"
 					preserveAspectRatio="xMidYMid meet"

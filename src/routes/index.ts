@@ -3,7 +3,7 @@ const api = import.meta.env.VITE_API_KEY;
  * @type {import('@sveltejs/kit').Load}
  */
 
-export async function get() {
+export async function GET() {
     const api_url = `https://api.themoviedb.org/3/trending/movie/week?api_key=${api}&language=en-GB&page=1`;
     const response = await fetch(api_url);
     const res = await response.json();

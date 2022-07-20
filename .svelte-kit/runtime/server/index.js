@@ -21,6 +21,62 @@ function to_headers(object) {
 }
 
 /**
+ * Given an Accept header and a list of possible content types, pick
+ * the most suitable one to respond with
+ * @param {string} accept
+ * @param {string[]} types
+ */
+function negotiate(accept, types) {
+	/** @type {Array<{ type: string, subtype: string, q: number, i: number }>} */
+	const parts = [];
+
+	accept.split(',').forEach((str, i) => {
+		const match = /([^/]+)\/([^;]+)(?:;q=([0-9.]+))?/.exec(str);
+
+		// no match equals invalid header — ignore
+		if (match) {
+			const [, type, subtype, q = '1'] = match;
+			parts.push({ type, subtype, q: +q, i });
+		}
+	});
+
+	parts.sort((a, b) => {
+		if (a.q !== b.q) {
+			return b.q - a.q;
+		}
+
+		if ((a.subtype === '*') !== (b.subtype === '*')) {
+			return a.subtype === '*' ? 1 : -1;
+		}
+
+		if ((a.type === '*') !== (b.type === '*')) {
+			return a.type === '*' ? 1 : -1;
+		}
+
+		return a.i - b.i;
+	});
+
+	let accepted;
+	let min_priority = Infinity;
+
+	for (const mimetype of types) {
+		const [type, subtype] = mimetype.split('/');
+		const priority = parts.findIndex(
+			(part) =>
+				(part.type === type || part.type === '*') &&
+				(part.subtype === subtype || part.subtype === '*')
+		);
+
+		if (priority !== -1 && priority < min_priority) {
+			accepted = mimetype;
+			min_priority = priority;
+		}
+	}
+
+	return accepted;
+}
+
+/**
  * Hash using djb2
  * @param {import('types').StrictBody} value
  */
@@ -77,25 +133,74 @@ function is_pojo(body) {
 
 	if (body) {
 		if (body instanceof Uint8Array) return false;
+		if (body instanceof ReadableStream) return false;
 
-		// body could be a node Readable, but we don't want to import
-		// node built-ins, so we use duck typing
-		if (body._readableState && typeof body.pipe === 'function') return false;
-
-		// similarly, it could be a web ReadableStream
-		if (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream) return false;
+		// if body is a node Readable, throw an error
+		// TODO remove this for 1.0
+		if (body._readableState && typeof body.pipe === 'function') {
+			throw new Error('Node streams are no longer supported — use a ReadableStream instead');
+		}
 	}
 
 	return true;
 }
+
 /**
- * @param {import('types').RequestEvent} event
- * @returns string
+ * Serialize an error into a JSON string, by copying its `name`, `message`
+ * and (in dev) `stack`, plus any custom properties, plus recursively
+ * serialized `cause` properties. This is necessary because
+ * `JSON.stringify(error) === '{}'`
+ * @param {Error} error
+ * @param {(error: Error) => string | undefined} get_stack
  */
-function normalize_request_method(event) {
-	const method = event.request.method.toLowerCase();
-	return method === 'delete' ? 'del' : method; // 'delete' is a reserved word
+function serialize_error(error, get_stack) {
+	return JSON.stringify(clone_error(error, get_stack));
 }
+
+/**
+ * @param {Error} error
+ * @param {(error: Error) => string | undefined} get_stack
+ */
+function clone_error(error, get_stack) {
+	const {
+		name,
+		message,
+		stack,
+		// @ts-expect-error i guess typescript doesn't know about error.cause yet
+		cause,
+		...custom
+	} = error;
+
+	/** @type {Record<string, any>} */
+	const object = { name, message, stack: get_stack(error) };
+
+	if (cause) object.cause = clone_error(cause, get_stack);
+
+	for (const key in custom) {
+		// @ts-expect-error
+		object[key] = custom[key];
+	}
+
+	return object;
+}
+
+// TODO: Remove for 1.0
+/** @param {Record<string, any>} mod */
+function check_method_names(mod) {
+	['get', 'post', 'put', 'patch', 'del'].forEach((m) => {
+		if (m in mod) {
+			const replacement = m === 'del' ? 'DELETE' : m.toUpperCase();
+			throw Error(
+				`Endpoint method "${m}" has changed to "${replacement}". See https://github.com/sveltejs/kit/discussions/5359 for more information.`
+			);
+		}
+	});
+}
+
+/** @type {import('types').SSRErrorPage} */
+const GENERIC_ERROR = {
+	id: '__error'
+};
 
 /** @param {string} body */
 function error(body) {
@@ -116,8 +221,10 @@ const text_types = new Set([
 	'multipart/form-data'
 ]);
 
+const bodyless_status_codes = new Set([101, 204, 205, 304]);
+
 /**
- * Decides how the body should be parsed based on its mime type. Should match what's in parse_body
+ * Decides how the body should be parsed based on its mime type
  *
  * @param {string | undefined | null} content_type The `content-type` header of a request/response.
  * @returns {boolean}
@@ -132,19 +239,44 @@ function is_text(content_type) {
 /**
  * @param {import('types').RequestEvent} event
  * @param {{ [method: string]: import('types').RequestHandler }} mod
- * @returns {Promise<Response | undefined>}
+ * @param {import('types').SSROptions} options
+ * @returns {Promise<Response>}
  */
-async function render_endpoint(event, mod) {
-	const method = normalize_request_method(event);
+async function render_endpoint(event, mod, options) {
+	const { method } = event.request;
+
+	check_method_names(mod);
 
 	/** @type {import('types').RequestHandler} */
 	let handler = mod[method];
 
-	if (!handler && method === 'head') {
-		handler = mod.get;
+	if (!handler && method === 'HEAD') {
+		handler = mod.GET;
 	}
+
 	if (!handler) {
-		return;
+		const allowed = [];
+
+		for (const method in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+			if (mod[method]) allowed.push(method);
+		}
+
+		if (mod.GET || mod.HEAD) allowed.push('HEAD');
+
+		return event.request.headers.get('x-sveltekit-load')
+			? // TODO would be nice to avoid these requests altogether,
+			  // by noting whether or not page endpoints export `get`
+			  new Response(undefined, {
+					status: 204
+			  })
+			: new Response(`${method} method not allowed`, {
+					status: 405,
+					headers: {
+						// https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+						// "The server must generate an Allow header field in a 405 status code response"
+						allow: allowed.join(', ')
+					}
+			  });
 	}
 
 	const response = await handler(event);
@@ -154,8 +286,12 @@ async function render_endpoint(event, mod) {
 		return error(`${preface}: expected an object, got ${typeof response}`);
 	}
 
+	// TODO remove for 1.0
+	// @ts-expect-error
 	if (response.fallthrough) {
-		return;
+		throw new Error(
+			'fallthrough is no longer supported. Use matchers instead: https://kit.svelte.dev/docs/routing#advanced-routing-matching'
+		);
 	}
 
 	const { status = 200, body = {} } = response;
@@ -166,9 +302,12 @@ async function render_endpoint(event, mod) {
 
 	const type = headers.get('content-type');
 
-	if (!is_text(type) && !(body instanceof Uint8Array || is_string(body))) {
+	if (
+		!is_text(type) &&
+		!(body instanceof Uint8Array || body instanceof ReadableStream || is_string(body))
+	) {
 		return error(
-			`${preface}: body must be an instance of string or Uint8Array if content-type is not a supported textual content-type`
+			`${preface}: body must be an instance of string, Uint8Array or ReadableStream if content-type is not a supported textual content-type`
 		);
 	}
 
@@ -177,7 +316,8 @@ async function render_endpoint(event, mod) {
 
 	if (is_pojo(body) && (!type || type.startsWith('application/json'))) {
 		headers.set('content-type', 'application/json; charset=utf-8');
-		normalized_body = JSON.stringify(body);
+		normalized_body =
+			body instanceof Error ? serialize_error(body, options.get_stack) : JSON.stringify(body);
 	} else {
 		normalized_body = /** @type {import('types').StrictBody} */ (body);
 	}
@@ -192,10 +332,13 @@ async function render_endpoint(event, mod) {
 		}
 	}
 
-	return new Response(method !== 'head' ? normalized_body : undefined, {
-		status,
-		headers
-	});
+	return new Response(
+		method !== 'HEAD' && !bodyless_status_codes.has(status) ? normalized_body : undefined,
+		{
+			status,
+			headers
+		}
+	);
 }
 
 var chars$1 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$';
@@ -605,18 +748,6 @@ function escape_html_attr(str) {
 
 const s = JSON.stringify;
 
-/** @param {URL} url */
-function create_prerendering_url_proxy(url) {
-	return new Proxy(url, {
-		get: (target, prop, receiver) => {
-			if (prop === 'search' || prop === 'searchParams') {
-				throw new Error(`Cannot access url.${prop} on a page with prerendering enabled`);
-			}
-			return Reflect.get(target, prop, receiver);
-		}
-	});
-}
-
 const encoder = new TextEncoder();
 
 /**
@@ -628,7 +759,7 @@ function sha256(data) {
 	if (!key[0]) precompute();
 
 	const out = init.slice(0);
-	const array = encode(data);
+	const array = encode$1(data);
 
 	for (let i = 0; i < array.length; i += 16) {
 		const w = array.subarray(i, i + 16);
@@ -778,7 +909,7 @@ function reverse_endianness(bytes) {
 }
 
 /** @param {string} str */
-function encode(str) {
+function encode$1(str) {
 	const encoded = encoder.encode(str);
 	const length = encoded.length * 8;
 
@@ -857,36 +988,11 @@ function base64(bytes) {
 	return result;
 }
 
-/** @type {Promise<void>} */
-let csp_ready;
+const array = new Uint8Array(16);
 
-/** @type {() => string} */
-let generate_nonce;
-
-/** @type {(input: string) => string} */
-let generate_hash;
-
-if (typeof crypto !== 'undefined') {
-	const array = new Uint8Array(16);
-
-	generate_nonce = () => {
-		crypto.getRandomValues(array);
-		return base64(array);
-	};
-
-	generate_hash = sha256;
-} else {
-	// TODO: remove this in favor of web crypto API once we no longer support Node 14
-	const name = 'crypto'; // store in a variable to fool esbuild when adapters bundle kit
-	csp_ready = import(name).then((crypto) => {
-		generate_nonce = () => {
-			return crypto.randomBytes(16).toString('base64');
-		};
-
-		generate_hash = (input) => {
-			return crypto.createHash('sha256').update(input, 'utf-8').digest().toString('base64');
-		};
-	});
+function generate_nonce() {
+	crypto.getRandomValues(array);
+	return base64(array);
 }
 
 const quoted = new Set([
@@ -901,12 +1007,11 @@ const quoted = new Set([
 
 const crypto_pattern = /^(nonce|sha\d\d\d)-/;
 
-class Csp {
+// CSP and CSP Report Only are extremely similar with a few caveats
+// the easiest/DRYest way to express this is with some private encapsulation
+class BaseProvider {
 	/** @type {boolean} */
 	#use_hashes;
-
-	/** @type {boolean} */
-	#dev;
 
 	/** @type {boolean} */
 	#script_needs_csp;
@@ -923,21 +1028,18 @@ class Csp {
 	/** @type {import('types').Csp.Source[]} */
 	#style_src;
 
+	/** @type {string} */
+	#nonce;
+
 	/**
-	 * @param {{
-	 *   mode: string,
-	 *   directives: import('types').CspDirectives
-	 * }} config
-	 * @param {{
-	 *   dev: boolean;
-	 *   prerender: boolean;
-	 *   needs_nonce: boolean;
-	 * }} opts
+	 * @param {boolean} use_hashes
+	 * @param {import('types').CspDirectives} directives
+	 * @param {string} nonce
+	 * @param {boolean} dev
 	 */
-	constructor({ mode, directives }, { dev, prerender, needs_nonce }) {
-		this.#use_hashes = mode === 'hash' || (mode === 'auto' && prerender);
+	constructor(use_hashes, directives, nonce, dev) {
+		this.#use_hashes = use_hashes;
 		this.#directives = dev ? { ...directives } : directives; // clone in dev so we can safely mutate
-		this.#dev = dev;
 
 		const d = this.#directives;
 
@@ -979,19 +1081,16 @@ class Csp {
 
 		this.script_needs_nonce = this.#script_needs_csp && !this.#use_hashes;
 		this.style_needs_nonce = this.#style_needs_csp && !this.#use_hashes;
-
-		if (this.script_needs_nonce || this.style_needs_nonce || needs_nonce) {
-			this.nonce = generate_nonce();
-		}
+		this.#nonce = nonce;
 	}
 
 	/** @param {string} content */
 	add_script(content) {
 		if (this.#script_needs_csp) {
 			if (this.#use_hashes) {
-				this.#script_src.push(`sha256-${generate_hash(content)}`);
+				this.#script_src.push(`sha256-${sha256(content)}`);
 			} else if (this.#script_src.length === 0) {
-				this.#script_src.push(`nonce-${this.nonce}`);
+				this.#script_src.push(`nonce-${this.#nonce}`);
 			}
 		}
 	}
@@ -1000,14 +1099,16 @@ class Csp {
 	add_style(content) {
 		if (this.#style_needs_csp) {
 			if (this.#use_hashes) {
-				this.#style_src.push(`sha256-${generate_hash(content)}`);
+				this.#style_src.push(`sha256-${sha256(content)}`);
 			} else if (this.#style_src.length === 0) {
-				this.#style_src.push(`nonce-${this.nonce}`);
+				this.#style_src.push(`nonce-${this.#nonce}`);
 			}
 		}
 	}
 
-	/** @param {boolean} [is_meta] */
+	/**
+	 * @param {boolean} [is_meta]
+	 */
 	get_header(is_meta = false) {
 		const header = [];
 
@@ -1038,7 +1139,7 @@ class Csp {
 				continue;
 			}
 
-			// @ts-expect-error gimme a break typescript, `key` is obviously a member of directives
+			// @ts-expect-error gimme a break typescript, `key` is obviously a member of internal_directives
 			const value = /** @type {string[] | true} */ (directives[key]);
 
 			if (!value) continue;
@@ -1059,425 +1160,79 @@ class Csp {
 
 		return header.join('; ');
 	}
+}
 
+class CspProvider extends BaseProvider {
 	get_meta() {
 		const content = escape_html_attr(this.get_header(true));
 		return `<meta http-equiv="content-security-policy" content=${content}>`;
 	}
 }
 
-// TODO rename this function/module
+class CspReportOnlyProvider extends BaseProvider {
+	/**
+	 * @param {boolean} use_hashes
+	 * @param {import('types').CspDirectives} directives
+	 * @param {string} nonce
+	 * @param {boolean} dev
+	 */
+	constructor(use_hashes, directives, nonce, dev) {
+		super(use_hashes, directives, nonce, dev);
 
-const updated = {
-	...readable(false),
-	check: () => false
-};
-
-/**
- * @param {{
- *   branch: Array<import('./types').Loaded>;
- *   options: import('types').SSROptions;
- *   state: import('types').SSRState;
- *   $session: any;
- *   page_config: { hydrate: boolean, router: boolean };
- *   status: number;
- *   error?: Error;
- *   url: URL;
- *   params: Record<string, string>;
- *   resolve_opts: import('types').RequiredResolveOptions;
- *   stuff: Record<string, any>;
- * }} opts
- */
-async function render_response({
-	branch,
-	options,
-	state,
-	$session,
-	page_config,
-	status,
-	error,
-	url,
-	params,
-	resolve_opts,
-	stuff
-}) {
-	if (state.prerender) {
-		if (options.csp.mode === 'nonce') {
-			throw new Error('Cannot use prerendering if config.kit.csp.mode === "nonce"');
-		}
-
-		if (options.template_contains_nonce) {
-			throw new Error('Cannot use prerendering if page template contains %svelte.nonce%');
-		}
-	}
-
-	const stylesheets = new Set(options.manifest._.entry.css);
-	const modulepreloads = new Set(options.manifest._.entry.js);
-	/** @type {Map<string, string>} */
-	const styles = new Map();
-
-	/** @type {Array<import('./types').Fetched>} */
-	const serialized_data = [];
-
-	let shadow_props;
-
-	let rendered;
-
-	let is_private = false;
-	let maxage;
-
-	if (error) {
-		error.stack = options.get_stack(error);
-	}
-
-	if (resolve_opts.ssr) {
-		branch.forEach(({ node, props, loaded, fetched, uses_credentials }) => {
-			if (node.css) node.css.forEach((url) => stylesheets.add(url));
-			if (node.js) node.js.forEach((url) => modulepreloads.add(url));
-			if (node.styles) Object.entries(node.styles).forEach(([k, v]) => styles.set(k, v));
-
-			// TODO probably better if `fetched` wasn't populated unless `hydrate`
-			if (fetched && page_config.hydrate) serialized_data.push(...fetched);
-			if (props) shadow_props = props;
-
-			if (uses_credentials) is_private = true;
-
-			maxage = loaded.maxage;
-		});
-
-		const session = writable($session);
-
-		/** @type {Record<string, any>} */
-		const props = {
-			stores: {
-				page: writable(null),
-				navigating: writable(null),
-				session,
-				updated
-			},
-			page: {
-				url: state.prerender ? create_prerendering_url_proxy(url) : url,
-				params,
-				status,
-				error,
-				stuff
-			},
-			components: branch.map(({ node }) => node.module.default)
-		};
-
-		// TODO remove this for 1.0
-		/**
-		 * @param {string} property
-		 * @param {string} replacement
-		 */
-		const print_error = (property, replacement) => {
-			Object.defineProperty(props.page, property, {
-				get: () => {
-					throw new Error(`$page.${property} has been replaced by $page.url.${replacement}`);
-				}
-			});
-		};
-
-		print_error('origin', 'origin');
-		print_error('path', 'pathname');
-		print_error('query', 'searchParams');
-
-		// props_n (instead of props[n]) makes it easy to avoid
-		// unnecessary updates for layout components
-		for (let i = 0; i < branch.length; i += 1) {
-			props[`props_${i}`] = await branch[i].loaded.props;
-		}
-
-		let session_tracking_active = false;
-		const unsubscribe = session.subscribe(() => {
-			if (session_tracking_active) is_private = true;
-		});
-		session_tracking_active = true;
-
-		try {
-			rendered = options.root.render(props);
-		} finally {
-			unsubscribe();
-		}
-	} else {
-		rendered = { head: '', html: '', css: { code: '', map: null } };
-	}
-
-	let { head, html: body } = rendered;
-
-	const inlined_style = Array.from(styles.values()).join('\n');
-
-	await csp_ready;
-	const csp = new Csp(options.csp, {
-		dev: options.dev,
-		prerender: !!state.prerender,
-		needs_nonce: options.template_contains_nonce
-	});
-
-	const target = hash(body);
-
-	// prettier-ignore
-	const init_app = `
-		import { start } from ${s(options.prefix + options.manifest._.entry.file)};
-		start({
-			target: document.querySelector('[data-hydrate="${target}"]').parentNode,
-			paths: ${s(options.paths)},
-			session: ${try_serialize($session, (error) => {
-				throw new Error(`Failed to serialize session data: ${error.message}`);
-			})},
-			route: ${!!page_config.router},
-			spa: ${!resolve_opts.ssr},
-			trailing_slash: ${s(options.trailing_slash)},
-			hydrate: ${resolve_opts.ssr && page_config.hydrate ? `{
-				status: ${status},
-				error: ${serialize_error(error)},
-				nodes: [
-					${(branch || [])
-					.map(({ node }) => `import(${s(options.prefix + node.entry)})`)
-					.join(',\n\t\t\t\t\t\t')}
-				],
-				params: ${devalue(params)}
-			}` : 'null'}
-		});
-	`;
-
-	const init_service_worker = `
-		if ('serviceWorker' in navigator) {
-			navigator.serviceWorker.register('${options.service_worker}');
-		}
-	`;
-
-	if (options.amp) {
-		// inline_style contains CSS files (i.e. `import './styles.css'`)
-		// rendered.css contains the CSS from `<style>` tags in Svelte components
-		const styles = `${inlined_style}\n${rendered.css.code}`;
-		head += `
-		<style amp-boilerplate>body{-webkit-animation:-amp-start 8s steps(1,end) 0s 1 normal both;-moz-animation:-amp-start 8s steps(1,end) 0s 1 normal both;-ms-animation:-amp-start 8s steps(1,end) 0s 1 normal both;animation:-amp-start 8s steps(1,end) 0s 1 normal both}@-webkit-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-moz-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-ms-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-o-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}</style>
-		<noscript><style amp-boilerplate>body{-webkit-animation:none;-moz-animation:none;-ms-animation:none;animation:none}</style></noscript>
-		<script async src="https://cdn.ampproject.org/v0.js"></script>
-
-		<style amp-custom>${styles}</style>`;
-
-		if (options.service_worker) {
-			head +=
-				'<script async custom-element="amp-install-serviceworker" src="https://cdn.ampproject.org/v0/amp-install-serviceworker-0.1.js"></script>';
-
-			body += `<amp-install-serviceworker src="${options.service_worker}" layout="nodisplay"></amp-install-serviceworker>`;
-		}
-	} else {
-		if (inlined_style) {
-			const attributes = [];
-			if (options.dev) attributes.push(' data-svelte');
-			if (csp.style_needs_nonce) attributes.push(` nonce="${csp.nonce}"`);
-
-			csp.add_style(inlined_style);
-
-			head += `\n\t<style${attributes.join('')}>${inlined_style}</style>`;
-		}
-
-		// prettier-ignore
-		head += Array.from(stylesheets)
-			.map((dep) => {
-				const attributes = [
-					'rel="stylesheet"',
-					`href="${options.prefix + dep}"`
-				];
-
-				if (csp.style_needs_nonce) {
-					attributes.push(`nonce="${csp.nonce}"`);
-				}
-
-				if (styles.has(dep)) {
-					// don't load stylesheets that are already inlined
-					// include them in disabled state so that Vite can detect them and doesn't try to add them
-					attributes.push('disabled', 'media="(max-width: 0)"');
-				}
-
-				return `\n\t<link ${attributes.join(' ')}>`;
-			})
-			.join('');
-
-		if (page_config.router || page_config.hydrate) {
-			head += Array.from(modulepreloads)
-				.map((dep) => `\n\t<link rel="modulepreload" href="${options.prefix + dep}">`)
-				.join('');
-
-			const attributes = ['type="module"', `data-hydrate="${target}"`];
-
-			csp.add_script(init_app);
-
-			if (csp.script_needs_nonce) {
-				attributes.push(`nonce="${csp.nonce}"`);
-			}
-
-			body += `\n\t\t<script ${attributes.join(' ')}>${init_app}</script>`;
-
-			body += serialized_data
-				.map(({ url, body, response }) =>
-					render_json_payload_script(
-						{ type: 'data', url, body: typeof body === 'string' ? hash(body) : undefined },
-						response
-					)
-				)
-				.join('\n\t');
-
-			if (shadow_props) {
-				body += render_json_payload_script({ type: 'props' }, shadow_props);
+		if (Object.values(directives).filter((v) => !!v).length > 0) {
+			// If we're generating content-security-policy-report-only,
+			// if there are any directives, we need a report-uri or report-to (or both)
+			// else it's just an expensive noop.
+			const has_report_to = directives['report-to']?.length ?? 0 > 0;
+			const has_report_uri = directives['report-uri']?.length ?? 0 > 0;
+			if (!has_report_to && !has_report_uri) {
+				throw Error(
+					'`content-security-policy-report-only` must be specified with either the `report-to` or `report-uri` directives, or both'
+				);
 			}
 		}
-
-		if (options.service_worker) {
-			// always include service worker unless it's turned off explicitly
-			csp.add_script(init_service_worker);
-
-			head += `
-				<script${csp.script_needs_nonce ? ` nonce="${csp.nonce}"` : ''}>${init_service_worker}</script>`;
-		}
-	}
-
-	if (state.prerender && !options.amp) {
-		const http_equiv = [];
-
-		const csp_headers = csp.get_meta();
-		if (csp_headers) {
-			http_equiv.push(csp_headers);
-		}
-
-		if (maxage) {
-			http_equiv.push(`<meta http-equiv="cache-control" content="max-age=${maxage}">`);
-		}
-
-		if (http_equiv.length > 0) {
-			head = http_equiv.join('\n') + head;
-		}
-	}
-
-	const segments = url.pathname.slice(options.paths.base.length).split('/').slice(2);
-	const assets =
-		options.paths.assets || (segments.length > 0 ? segments.map(() => '..').join('/') : '.');
-
-	const html = await resolve_opts.transformPage({
-		html: options.template({ head, body, assets, nonce: /** @type {string} */ (csp.nonce) })
-	});
-
-	const headers = new Headers({
-		'content-type': 'text/html',
-		etag: `"${hash(html)}"`
-	});
-
-	if (maxage) {
-		headers.set('cache-control', `${is_private ? 'private' : 'public'}, max-age=${maxage}`);
-	}
-
-	if (!options.floc) {
-		headers.set('permissions-policy', 'interest-cohort=()');
-	}
-
-	if (!state.prerender) {
-		const csp_header = csp.get_header();
-		if (csp_header) {
-			headers.set('content-security-policy', csp_header);
-		}
-	}
-
-	return new Response(html, {
-		status,
-		headers
-	});
-}
-
-/**
- * @param {any} data
- * @param {(error: Error) => void} [fail]
- */
-function try_serialize(data, fail) {
-	try {
-		return devalue(data);
-	} catch (err) {
-		if (fail) fail(coalesce_to_error(err));
-		return null;
 	}
 }
 
-// Ensure we return something truthy so the client will not re-render the page over the error
+class Csp {
+	/** @readonly */
+	nonce = generate_nonce();
 
-/** @param {(Error & {frame?: string} & {loc?: object}) | undefined | null} error */
-function serialize_error(error) {
-	if (!error) return null;
-	let serialized = try_serialize(error);
-	if (!serialized) {
-		const { name, message, stack } = error;
-		serialized = try_serialize({ ...error, name, message, stack });
-	}
-	if (!serialized) {
-		serialized = '{}';
-	}
-	return serialized;
-}
+	/** @type {CspProvider} */
+	csp_provider;
 
-/**
- * @param {import('types').LoadOutput} loaded
- * @returns {import('types').NormalizedLoadOutput}
- */
-function normalize(loaded) {
-	const has_error_status =
-		loaded.status && loaded.status >= 400 && loaded.status <= 599 && !loaded.redirect;
-	if (loaded.error || has_error_status) {
-		const status = loaded.status;
+	/** @type {CspReportOnlyProvider} */
+	report_only_provider;
 
-		if (!loaded.error && has_error_status) {
-			return {
-				status: status || 500,
-				error: new Error()
-			};
-		}
-
-		const error = typeof loaded.error === 'string' ? new Error(loaded.error) : loaded.error;
-
-		if (!(error instanceof Error)) {
-			return {
-				status: 500,
-				error: new Error(
-					`"error" property returned from load() must be a string or instance of Error, received type "${typeof error}"`
-				)
-			};
-		}
-
-		if (!status || status < 400 || status > 599) {
-			console.warn('"error" returned from load() without a valid status code — defaulting to 500');
-			return { status: 500, error };
-		}
-
-		return { status, error };
+	/**
+	 * @param {import('./types').CspConfig} config
+	 * @param {import('./types').CspOpts} opts
+	 */
+	constructor({ mode, directives, reportOnly }, { prerender, dev }) {
+		const use_hashes = mode === 'hash' || (mode === 'auto' && prerender);
+		this.csp_provider = new CspProvider(use_hashes, directives, this.nonce, dev);
+		this.report_only_provider = new CspReportOnlyProvider(use_hashes, reportOnly, this.nonce, dev);
 	}
 
-	if (loaded.redirect) {
-		if (!loaded.status || Math.floor(loaded.status / 100) !== 3) {
-			return {
-				status: 500,
-				error: new Error(
-					'"redirect" property returned from load() must be accompanied by a 3xx status code'
-				)
-			};
-		}
-
-		if (typeof loaded.redirect !== 'string') {
-			return {
-				status: 500,
-				error: new Error('"redirect" property returned from load() must be a string')
-			};
-		}
+	get script_needs_nonce() {
+		return this.csp_provider.script_needs_nonce || this.report_only_provider.script_needs_nonce;
 	}
 
-	// TODO remove before 1.0
-	if (/** @type {any} */ (loaded).context) {
-		throw new Error(
-			'You are returning "context" from a load function. ' +
-				'"context" was renamed to "stuff", please adjust your code accordingly.'
-		);
+	get style_needs_nonce() {
+		return this.csp_provider.style_needs_nonce || this.report_only_provider.style_needs_nonce;
 	}
 
-	return /** @type {import('types').NormalizedLoadOutput} */ (loaded);
+	/** @param {string} content */
+	add_script(content) {
+		this.csp_provider.add_script(content);
+		this.report_only_provider.add_script(content);
+	}
+
+	/** @param {string} content */
+	add_style(content) {
+		this.csp_provider.add_style(content);
+		this.report_only_provider.add_style(content);
+	}
 }
 
 const absolute = /^([a-z]+:)?\/?\//;
@@ -1528,21 +1283,955 @@ function normalize_path(path, trailing_slash) {
 
 	if (trailing_slash === 'never') {
 		return path.endsWith('/') ? path.slice(0, -1) : path;
-	} else if (trailing_slash === 'always' && /\/[^./]+$/.test(path)) {
+	} else if (trailing_slash === 'always' && !path.endsWith('/')) {
 		return path + '/';
 	}
 
 	return path;
 }
 
+class LoadURL extends URL {
+	/** @returns {string} */
+	get hash() {
+		throw new Error(
+			'url.hash is inaccessible from load. Consider accessing hash from the page store within the script tag of your component.'
+		);
+	}
+}
+
+class PrerenderingURL extends URL {
+	/** @returns {string} */
+	get search() {
+		throw new Error('Cannot access url.search on a page with prerendering enabled');
+	}
+
+	/** @returns {URLSearchParams} */
+	get searchParams() {
+		throw new Error('Cannot access url.searchParams on a page with prerendering enabled');
+	}
+}
+
+// TODO rename this function/module
+
+const updated = {
+	...readable(false),
+	check: () => false
+};
+
 /**
+ * Creates the HTML response.
+ * @param {{
+ *   branch: Array<import('./types').Loaded>;
+ *   options: import('types').SSROptions;
+ *   state: import('types').SSRState;
+ *   $session: any;
+ *   page_config: { hydrate: boolean, router: boolean };
+ *   status: number;
+ *   error: Error | null;
+ *   event: import('types').RequestEvent;
+ *   resolve_opts: import('types').RequiredResolveOptions;
+ *   stuff: Record<string, any>;
+ * }} opts
+ */
+async function render_response({
+	branch,
+	options,
+	state,
+	$session,
+	page_config,
+	status,
+	error = null,
+	event,
+	resolve_opts,
+	stuff
+}) {
+	if (state.prerendering) {
+		if (options.csp.mode === 'nonce') {
+			throw new Error('Cannot use prerendering if config.kit.csp.mode === "nonce"');
+		}
+
+		if (options.template_contains_nonce) {
+			throw new Error('Cannot use prerendering if page template contains %sveltekit.nonce%');
+		}
+	}
+
+	const { entry } = options.manifest._;
+
+	const stylesheets = new Set(entry.stylesheets);
+	const modulepreloads = new Set(entry.imports);
+
+	/** @type {Map<string, string>} */
+	// TODO if we add a client entry point one day, we will need to include inline_styles with the entry, otherwise stylesheets will be linked even if they are below inlineStyleThreshold
+	const inline_styles = new Map();
+
+	/** @type {Array<import('./types').Fetched>} */
+	const serialized_data = [];
+
+	let shadow_props;
+
+	let rendered;
+
+	let is_private = false;
+	/** @type {import('types').NormalizedLoadOutputCache | undefined} */
+	let cache;
+
+	if (error) {
+		error.stack = options.get_stack(error);
+	}
+
+	if (resolve_opts.ssr) {
+		const leaf = /** @type {import('./types.js').Loaded} */ (branch.at(-1));
+
+		if (leaf.loaded.status) {
+			// explicit status returned from `load` or a page endpoint trumps
+			// initial status
+			status = leaf.loaded.status;
+		}
+
+		for (const { node, props, loaded, fetched, uses_credentials } of branch) {
+			if (node.imports) {
+				node.imports.forEach((url) => modulepreloads.add(url));
+			}
+
+			if (node.stylesheets) {
+				node.stylesheets.forEach((url) => stylesheets.add(url));
+			}
+
+			if (node.inline_styles) {
+				Object.entries(await node.inline_styles()).forEach(([k, v]) => inline_styles.set(k, v));
+			}
+
+			// TODO probably better if `fetched` wasn't populated unless `hydrate`
+			if (fetched && page_config.hydrate) serialized_data.push(...fetched);
+			if (props) shadow_props = props;
+
+			cache = loaded?.cache;
+			is_private = cache?.private ?? uses_credentials;
+		}
+
+		const session = writable($session);
+
+		/** @type {Record<string, any>} */
+		const props = {
+			stores: {
+				page: writable(null),
+				navigating: writable(null),
+				/** @type {import('svelte/store').Writable<App.Session>} */
+				session: {
+					...session,
+					subscribe: (fn) => {
+						is_private = cache?.private ?? true;
+						return session.subscribe(fn);
+					}
+				},
+				updated
+			},
+			/** @type {import('types').Page} */
+			page: {
+				error,
+				params: event.params,
+				routeId: event.routeId,
+				status,
+				stuff,
+				url: state.prerendering ? new PrerenderingURL(event.url) : event.url
+			},
+			components: branch.map(({ node }) => node.module.default)
+		};
+
+		// TODO remove this for 1.0
+		/**
+		 * @param {string} property
+		 * @param {string} replacement
+		 */
+		const print_error = (property, replacement) => {
+			Object.defineProperty(props.page, property, {
+				get: () => {
+					throw new Error(`$page.${property} has been replaced by $page.url.${replacement}`);
+				}
+			});
+		};
+
+		print_error('origin', 'origin');
+		print_error('path', 'pathname');
+		print_error('query', 'searchParams');
+
+		// props_n (instead of props[n]) makes it easy to avoid
+		// unnecessary updates for layout components
+		for (let i = 0; i < branch.length; i += 1) {
+			props[`props_${i}`] = await branch[i].loaded.props;
+		}
+
+		rendered = options.root.render(props);
+	} else {
+		rendered = { head: '', html: '', css: { code: '', map: null } };
+	}
+
+	let { head, html: body } = rendered;
+
+	const csp = new Csp(options.csp, {
+		dev: options.dev,
+		prerender: !!state.prerendering
+	});
+
+	const target = hash(body);
+
+	// prettier-ignore
+	const init_app = `
+		import { start } from ${s(options.prefix + entry.file)};
+		start({
+			target: document.querySelector('[data-sveltekit-hydrate="${target}"]').parentNode,
+			paths: ${s(options.paths)},
+			session: ${try_serialize($session, (error) => {
+				throw new Error(`Failed to serialize session data: ${error.message}`);
+			})},
+			route: ${!!page_config.router},
+			spa: ${!resolve_opts.ssr},
+			trailing_slash: ${s(options.trailing_slash)},
+			hydrate: ${resolve_opts.ssr && page_config.hydrate ? `{
+				status: ${status},
+				error: ${error && serialize_error(error, e => e.stack)},
+				nodes: [${branch.map(({ node }) => node.index).join(', ')}],
+				params: ${devalue(event.params)},
+				routeId: ${s(event.routeId)}
+			}` : 'null'}
+		});
+	`;
+
+	// we use an anonymous function instead of an arrow function to support
+	// older browsers (https://github.com/sveltejs/kit/pull/5417)
+	const init_service_worker = `
+		if ('serviceWorker' in navigator) {
+			addEventListener('load', function () {
+				navigator.serviceWorker.register('${options.service_worker}');
+			});
+		}
+	`;
+
+	if (inline_styles.size > 0) {
+		const content = Array.from(inline_styles.values()).join('\n');
+
+		const attributes = [];
+		if (options.dev) attributes.push(' data-sveltekit');
+		if (csp.style_needs_nonce) attributes.push(` nonce="${csp.nonce}"`);
+
+		csp.add_style(content);
+
+		head += `\n\t<style${attributes.join('')}>${content}</style>`;
+	}
+
+	// prettier-ignore
+	head += Array.from(stylesheets)
+		.map((dep) => {
+			const attributes = [
+				'rel="stylesheet"',
+				`href="${options.prefix + dep}"`
+			];
+
+			if (csp.style_needs_nonce) {
+				attributes.push(`nonce="${csp.nonce}"`);
+			}
+
+			if (inline_styles.has(dep)) {
+				// don't load stylesheets that are already inlined
+				// include them in disabled state so that Vite can detect them and doesn't try to add them
+				attributes.push('disabled', 'media="(max-width: 0)"');
+			}
+
+			return `\n\t<link ${attributes.join(' ')}>`;
+		})
+		.join('');
+
+	if (page_config.router || page_config.hydrate) {
+		head += Array.from(modulepreloads)
+			.map((dep) => `\n\t<link rel="modulepreload" href="${options.prefix + dep}">`)
+			.join('');
+
+		const attributes = ['type="module"', `data-sveltekit-hydrate="${target}"`];
+
+		csp.add_script(init_app);
+
+		if (csp.script_needs_nonce) {
+			attributes.push(`nonce="${csp.nonce}"`);
+		}
+
+		body += `\n\t\t<script ${attributes.join(' ')}>${init_app}</script>`;
+
+		body += serialized_data
+			.map(({ url, body, response }) =>
+				render_json_payload_script(
+					{ type: 'data', url, body: typeof body === 'string' ? hash(body) : undefined },
+					response
+				)
+			)
+			.join('\n\t');
+
+		if (shadow_props) {
+			body += render_json_payload_script({ type: 'props' }, shadow_props);
+		}
+	}
+
+	if (options.service_worker) {
+		// always include service worker unless it's turned off explicitly
+		csp.add_script(init_service_worker);
+
+		head += `
+			<script${csp.script_needs_nonce ? ` nonce="${csp.nonce}"` : ''}>${init_service_worker}</script>`;
+	}
+
+	if (state.prerendering) {
+		const http_equiv = [];
+
+		const csp_headers = csp.csp_provider.get_meta();
+		if (csp_headers) {
+			http_equiv.push(csp_headers);
+		}
+
+		if (cache) {
+			http_equiv.push(`<meta http-equiv="cache-control" content="max-age=${cache.maxage}">`);
+		}
+
+		if (http_equiv.length > 0) {
+			head = http_equiv.join('\n') + head;
+		}
+	}
+
+	const segments = event.url.pathname.slice(options.paths.base.length).split('/').slice(2);
+	const assets =
+		options.paths.assets || (segments.length > 0 ? segments.map(() => '..').join('/') : '.');
+
+	const html = await resolve_opts.transformPage({
+		html: options.template({ head, body, assets, nonce: /** @type {string} */ (csp.nonce) })
+	});
+
+	const headers = new Headers({
+		'content-type': 'text/html',
+		etag: `"${hash(html)}"`
+	});
+
+	if (cache) {
+		headers.set('cache-control', `${is_private ? 'private' : 'public'}, max-age=${cache.maxage}`);
+	}
+
+	if (!state.prerendering) {
+		const csp_header = csp.csp_provider.get_header();
+		if (csp_header) {
+			headers.set('content-security-policy', csp_header);
+		}
+		const report_only_header = csp.report_only_provider.get_header();
+		if (report_only_header) {
+			headers.set('content-security-policy-report-only', report_only_header);
+		}
+	}
+
+	return new Response(html, {
+		status,
+		headers
+	});
+}
+
+/**
+ * @param {any} data
+ * @param {(error: Error) => void} [fail]
+ */
+function try_serialize(data, fail) {
+	try {
+		return devalue(data);
+	} catch (err) {
+		if (fail) fail(coalesce_to_error(err));
+		return null;
+	}
+}
+
+/*!
+ * cookie
+ * Copyright(c) 2012-2014 Roman Shtylman
+ * Copyright(c) 2015 Douglas Christopher Wilson
+ * MIT Licensed
+ */
+
+/**
+ * Module exports.
+ * @public
+ */
+
+var parse_1 = parse$1;
+var serialize_1 = serialize;
+
+/**
+ * Module variables.
+ * @private
+ */
+
+var __toString = Object.prototype.toString;
+
+/**
+ * RegExp to match field-content in RFC 7230 sec 3.2
+ *
+ * field-content = field-vchar [ 1*( SP / HTAB ) field-vchar ]
+ * field-vchar   = VCHAR / obs-text
+ * obs-text      = %x80-FF
+ */
+
+var fieldContentRegExp = /^[\u0009\u0020-\u007e\u0080-\u00ff]+$/;
+
+/**
+ * Parse a cookie header.
+ *
+ * Parse the given cookie header string into an object
+ * The object has the various cookies as keys(names) => values
+ *
+ * @param {string} str
+ * @param {object} [options]
+ * @return {object}
+ * @public
+ */
+
+function parse$1(str, options) {
+  if (typeof str !== 'string') {
+    throw new TypeError('argument str must be a string');
+  }
+
+  var obj = {};
+  var opt = options || {};
+  var dec = opt.decode || decode;
+
+  var index = 0;
+  while (index < str.length) {
+    var eqIdx = str.indexOf('=', index);
+
+    // no more cookie pairs
+    if (eqIdx === -1) {
+      break
+    }
+
+    var endIdx = str.indexOf(';', index);
+
+    if (endIdx === -1) {
+      endIdx = str.length;
+    } else if (endIdx < eqIdx) {
+      // backtrack on prior semicolon
+      index = str.lastIndexOf(';', eqIdx - 1) + 1;
+      continue
+    }
+
+    var key = str.slice(index, eqIdx).trim();
+
+    // only assign once
+    if (undefined === obj[key]) {
+      var val = str.slice(eqIdx + 1, endIdx).trim();
+
+      // quoted values
+      if (val.charCodeAt(0) === 0x22) {
+        val = val.slice(1, -1);
+      }
+
+      obj[key] = tryDecode(val, dec);
+    }
+
+    index = endIdx + 1;
+  }
+
+  return obj;
+}
+
+/**
+ * Serialize data into a cookie header.
+ *
+ * Serialize the a name value pair into a cookie string suitable for
+ * http headers. An optional options object specified cookie parameters.
+ *
+ * serialize('foo', 'bar', { httpOnly: true })
+ *   => "foo=bar; httpOnly"
+ *
+ * @param {string} name
+ * @param {string} val
+ * @param {object} [options]
+ * @return {string}
+ * @public
+ */
+
+function serialize(name, val, options) {
+  var opt = options || {};
+  var enc = opt.encode || encode;
+
+  if (typeof enc !== 'function') {
+    throw new TypeError('option encode is invalid');
+  }
+
+  if (!fieldContentRegExp.test(name)) {
+    throw new TypeError('argument name is invalid');
+  }
+
+  var value = enc(val);
+
+  if (value && !fieldContentRegExp.test(value)) {
+    throw new TypeError('argument val is invalid');
+  }
+
+  var str = name + '=' + value;
+
+  if (null != opt.maxAge) {
+    var maxAge = opt.maxAge - 0;
+
+    if (isNaN(maxAge) || !isFinite(maxAge)) {
+      throw new TypeError('option maxAge is invalid')
+    }
+
+    str += '; Max-Age=' + Math.floor(maxAge);
+  }
+
+  if (opt.domain) {
+    if (!fieldContentRegExp.test(opt.domain)) {
+      throw new TypeError('option domain is invalid');
+    }
+
+    str += '; Domain=' + opt.domain;
+  }
+
+  if (opt.path) {
+    if (!fieldContentRegExp.test(opt.path)) {
+      throw new TypeError('option path is invalid');
+    }
+
+    str += '; Path=' + opt.path;
+  }
+
+  if (opt.expires) {
+    var expires = opt.expires;
+
+    if (!isDate(expires) || isNaN(expires.valueOf())) {
+      throw new TypeError('option expires is invalid');
+    }
+
+    str += '; Expires=' + expires.toUTCString();
+  }
+
+  if (opt.httpOnly) {
+    str += '; HttpOnly';
+  }
+
+  if (opt.secure) {
+    str += '; Secure';
+  }
+
+  if (opt.priority) {
+    var priority = typeof opt.priority === 'string'
+      ? opt.priority.toLowerCase()
+      : opt.priority;
+
+    switch (priority) {
+      case 'low':
+        str += '; Priority=Low';
+        break
+      case 'medium':
+        str += '; Priority=Medium';
+        break
+      case 'high':
+        str += '; Priority=High';
+        break
+      default:
+        throw new TypeError('option priority is invalid')
+    }
+  }
+
+  if (opt.sameSite) {
+    var sameSite = typeof opt.sameSite === 'string'
+      ? opt.sameSite.toLowerCase() : opt.sameSite;
+
+    switch (sameSite) {
+      case true:
+        str += '; SameSite=Strict';
+        break;
+      case 'lax':
+        str += '; SameSite=Lax';
+        break;
+      case 'strict':
+        str += '; SameSite=Strict';
+        break;
+      case 'none':
+        str += '; SameSite=None';
+        break;
+      default:
+        throw new TypeError('option sameSite is invalid');
+    }
+  }
+
+  return str;
+}
+
+/**
+ * URL-decode string value. Optimized to skip native call when no %.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+
+function decode (str) {
+  return str.indexOf('%') !== -1
+    ? decodeURIComponent(str)
+    : str
+}
+
+/**
+ * URL-encode value.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+
+function encode (val) {
+  return encodeURIComponent(val)
+}
+
+/**
+ * Determine if value is a Date.
+ *
+ * @param {*} val
+ * @private
+ */
+
+function isDate (val) {
+  return __toString.call(val) === '[object Date]' ||
+    val instanceof Date
+}
+
+/**
+ * Try decoding a string using a decoding function.
+ *
+ * @param {string} str
+ * @param {function} decode
+ * @private
+ */
+
+function tryDecode(str, decode) {
+  try {
+    return decode(str);
+  } catch (e) {
+    return str;
+  }
+}
+
+var setCookie = {exports: {}};
+
+var defaultParseOptions = {
+  decodeValues: true,
+  map: false,
+  silent: false,
+};
+
+function isNonEmptyString(str) {
+  return typeof str === "string" && !!str.trim();
+}
+
+function parseString(setCookieValue, options) {
+  var parts = setCookieValue.split(";").filter(isNonEmptyString);
+  var nameValue = parts.shift().split("=");
+  var name = nameValue.shift();
+  var value = nameValue.join("="); // everything after the first =, joined by a "=" if there was more than one part
+
+  options = options
+    ? Object.assign({}, defaultParseOptions, options)
+    : defaultParseOptions;
+
+  try {
+    value = options.decodeValues ? decodeURIComponent(value) : value; // decode cookie value
+  } catch (e) {
+    console.error(
+      "set-cookie-parser encountered an error while decoding a cookie with value '" +
+        value +
+        "'. Set options.decodeValues to false to disable this feature.",
+      e
+    );
+  }
+
+  var cookie = {
+    name: name, // grab everything before the first =
+    value: value,
+  };
+
+  parts.forEach(function (part) {
+    var sides = part.split("=");
+    var key = sides.shift().trimLeft().toLowerCase();
+    var value = sides.join("=");
+    if (key === "expires") {
+      cookie.expires = new Date(value);
+    } else if (key === "max-age") {
+      cookie.maxAge = parseInt(value, 10);
+    } else if (key === "secure") {
+      cookie.secure = true;
+    } else if (key === "httponly") {
+      cookie.httpOnly = true;
+    } else if (key === "samesite") {
+      cookie.sameSite = value;
+    } else {
+      cookie[key] = value;
+    }
+  });
+
+  return cookie;
+}
+
+function parse(input, options) {
+  options = options
+    ? Object.assign({}, defaultParseOptions, options)
+    : defaultParseOptions;
+
+  if (!input) {
+    if (!options.map) {
+      return [];
+    } else {
+      return {};
+    }
+  }
+
+  if (input.headers && input.headers["set-cookie"]) {
+    // fast-path for node.js (which automatically normalizes header names to lower-case
+    input = input.headers["set-cookie"];
+  } else if (input.headers) {
+    // slow-path for other environments - see #25
+    var sch =
+      input.headers[
+        Object.keys(input.headers).find(function (key) {
+          return key.toLowerCase() === "set-cookie";
+        })
+      ];
+    // warn if called on a request-like object with a cookie header rather than a set-cookie header - see #34, 36
+    if (!sch && input.headers.cookie && !options.silent) {
+      console.warn(
+        "Warning: set-cookie-parser appears to have been called on a request object. It is designed to parse Set-Cookie headers from responses, not Cookie headers from requests. Set the option {silent: true} to suppress this warning."
+      );
+    }
+    input = sch;
+  }
+  if (!Array.isArray(input)) {
+    input = [input];
+  }
+
+  options = options
+    ? Object.assign({}, defaultParseOptions, options)
+    : defaultParseOptions;
+
+  if (!options.map) {
+    return input.filter(isNonEmptyString).map(function (str) {
+      return parseString(str, options);
+    });
+  } else {
+    var cookies = {};
+    return input.filter(isNonEmptyString).reduce(function (cookies, str) {
+      var cookie = parseString(str, options);
+      cookies[cookie.name] = cookie;
+      return cookies;
+    }, cookies);
+  }
+}
+
+/*
+  Set-Cookie header field-values are sometimes comma joined in one string. This splits them without choking on commas
+  that are within a single set-cookie field-value, such as in the Expires portion.
+
+  This is uncommon, but explicitly allowed - see https://tools.ietf.org/html/rfc2616#section-4.2
+  Node.js does this for every header *except* set-cookie - see https://github.com/nodejs/node/blob/d5e363b77ebaf1caf67cd7528224b651c86815c1/lib/_http_incoming.js#L128
+  React Native's fetch does this for *every* header, including set-cookie.
+
+  Based on: https://github.com/google/j2objc/commit/16820fdbc8f76ca0c33472810ce0cb03d20efe25
+  Credits to: https://github.com/tomball for original and https://github.com/chrusart for JavaScript implementation
+*/
+function splitCookiesString(cookiesString) {
+  if (Array.isArray(cookiesString)) {
+    return cookiesString;
+  }
+  if (typeof cookiesString !== "string") {
+    return [];
+  }
+
+  var cookiesStrings = [];
+  var pos = 0;
+  var start;
+  var ch;
+  var lastComma;
+  var nextStart;
+  var cookiesSeparatorFound;
+
+  function skipWhitespace() {
+    while (pos < cookiesString.length && /\s/.test(cookiesString.charAt(pos))) {
+      pos += 1;
+    }
+    return pos < cookiesString.length;
+  }
+
+  function notSpecialChar() {
+    ch = cookiesString.charAt(pos);
+
+    return ch !== "=" && ch !== ";" && ch !== ",";
+  }
+
+  while (pos < cookiesString.length) {
+    start = pos;
+    cookiesSeparatorFound = false;
+
+    while (skipWhitespace()) {
+      ch = cookiesString.charAt(pos);
+      if (ch === ",") {
+        // ',' is a cookie separator if we have later first '=', not ';' or ','
+        lastComma = pos;
+        pos += 1;
+
+        skipWhitespace();
+        nextStart = pos;
+
+        while (pos < cookiesString.length && notSpecialChar()) {
+          pos += 1;
+        }
+
+        // currently special character
+        if (pos < cookiesString.length && cookiesString.charAt(pos) === "=") {
+          // we found cookies separator
+          cookiesSeparatorFound = true;
+          // pos is inside the next cookie, so back up and return it.
+          pos = nextStart;
+          cookiesStrings.push(cookiesString.substring(start, lastComma));
+          start = pos;
+        } else {
+          // in param ',' or param separator ';',
+          // we continue from that comma
+          pos = lastComma + 1;
+        }
+      } else {
+        pos += 1;
+      }
+    }
+
+    if (!cookiesSeparatorFound || pos >= cookiesString.length) {
+      cookiesStrings.push(cookiesString.substring(start, cookiesString.length));
+    }
+  }
+
+  return cookiesStrings;
+}
+
+setCookie.exports = parse;
+setCookie.exports.parse = parse;
+var parseString_1 = setCookie.exports.parseString = parseString;
+var splitCookiesString_1 = setCookie.exports.splitCookiesString = splitCookiesString;
+
+/**
+ * @param {import('types').LoadOutput | void} loaded
+ * @returns {import('types').NormalizedLoadOutput}
+ */
+function normalize(loaded) {
+	if (!loaded) {
+		return {};
+	}
+
+	// TODO remove for 1.0
+	// @ts-expect-error
+	if (loaded.fallthrough) {
+		throw new Error(
+			'fallthrough is no longer supported. Use matchers instead: https://kit.svelte.dev/docs/routing#advanced-routing-matching'
+		);
+	}
+
+	// TODO remove for 1.0
+	if ('maxage' in loaded) {
+		throw new Error('maxage should be replaced with cache: { maxage }');
+	}
+
+	const has_error_status =
+		loaded.status && loaded.status >= 400 && loaded.status <= 599 && !loaded.redirect;
+	if (loaded.error || has_error_status) {
+		const status = loaded.status;
+
+		if (!loaded.error && has_error_status) {
+			return {
+				status: status || 500,
+				error: new Error(`${status}`)
+			};
+		}
+
+		const error = typeof loaded.error === 'string' ? new Error(loaded.error) : loaded.error;
+
+		if (!(error instanceof Error)) {
+			return {
+				status: 500,
+				error: new Error(
+					`"error" property returned from load() must be a string or instance of Error, received type "${typeof error}"`
+				)
+			};
+		}
+
+		if (!status || status < 400 || status > 599) {
+			console.warn('"error" returned from load() without a valid status code — defaulting to 500');
+			return { status: 500, error };
+		}
+
+		return { status, error };
+	}
+
+	if (loaded.redirect) {
+		if (!loaded.status || Math.floor(loaded.status / 100) !== 3) {
+			throw new Error(
+				'"redirect" property returned from load() must be accompanied by a 3xx status code'
+			);
+		}
+
+		if (typeof loaded.redirect !== 'string') {
+			throw new Error('"redirect" property returned from load() must be a string');
+		}
+	}
+
+	if (loaded.dependencies) {
+		if (
+			!Array.isArray(loaded.dependencies) ||
+			loaded.dependencies.some((dep) => typeof dep !== 'string')
+		) {
+			throw new Error('"dependencies" property returned from load() must be of type string[]');
+		}
+	}
+
+	// TODO remove before 1.0
+	if (/** @type {any} */ (loaded).context) {
+		throw new Error(
+			'You are returning "context" from a load function. ' +
+				'"context" was renamed to "stuff", please adjust your code accordingly.'
+		);
+	}
+
+	return /** @type {import('types').NormalizedLoadOutput} */ (loaded);
+}
+
+/**
+ * @param {string} hostname
+ * @param {string} [constraint]
+ */
+function domain_matches(hostname, constraint) {
+	if (!constraint) return true;
+
+	const normalized = constraint[0] === '.' ? constraint.slice(1) : constraint;
+
+	if (hostname === normalized) return true;
+	return hostname.endsWith('.' + normalized);
+}
+
+/**
+ * @param {string} path
+ * @param {string} [constraint]
+ */
+function path_matches(path, constraint) {
+	if (!constraint) return true;
+
+	const normalized = constraint.endsWith('/') ? constraint.slice(0, -1) : constraint;
+
+	if (path === normalized) return true;
+	return path.startsWith(normalized + '/');
+}
+
+/**
+ * Calls the user's `load` function.
  * @param {{
  *   event: import('types').RequestEvent;
  *   options: import('types').SSROptions;
  *   state: import('types').SSRState;
- *   route: import('types').SSRPage | null;
- *   url: URL;
- *   params: Record<string, string>;
+ *   route: import('types').SSRPage | import('types').SSRErrorPage;
  *   node: import('types').SSRNode;
  *   $session: any;
  *   stuff: Record<string, any>;
@@ -1551,15 +2240,13 @@ function normalize_path(path, trailing_slash) {
  *   status?: number;
  *   error?: Error;
  * }} opts
- * @returns {Promise<import('./types').Loaded | undefined>} undefined for fallthrough
+ * @returns {Promise<import('./types').Loaded>}
  */
 async function load_node({
 	event,
 	options,
 	state,
 	route,
-	url,
-	params,
 	node,
 	$session,
 	stuff,
@@ -1575,13 +2262,15 @@ async function load_node({
 	/** @type {Array<import('./types').Fetched>} */
 	const fetched = [];
 
-	/**
-	 * @type {string[]}
-	 */
-	let set_cookie_headers = [];
+	const cookies = parse_1(event.request.headers.get('cookie') || '');
 
-	/** @type {import('types').Either<import('types').Fallthrough, import('types').LoadOutput>} */
+	/** @type {import('set-cookie-parser').Cookie[]} */
+	const new_cookies = [];
+
+	/** @type {import('types').NormalizedLoadOutput} */
 	let loaded;
+
+	const should_prerender = node.module.prerender ?? options.prerender.default;
 
 	/** @type {import('types').ShadowData} */
 	const shadow = is_leaf
@@ -1589,33 +2278,37 @@ async function load_node({
 				/** @type {import('types').SSRPage} */ (route),
 				event,
 				options,
-				!!state.prerender
+				should_prerender
 		  )
 		: {};
 
-	if (shadow.fallthrough) return;
-
 	if (shadow.cookies) {
-		set_cookie_headers.push(...shadow.cookies);
+		shadow.cookies.forEach((header) => {
+			new_cookies.push(parseString_1(header));
+		});
 	}
 
 	if (shadow.error) {
 		loaded = {
-			status: shadow.status,
 			error: shadow.error
 		};
 	} else if (shadow.redirect) {
 		loaded = {
-			status: shadow.status,
 			redirect: shadow.redirect
 		};
 	} else if (module.load) {
-		/** @type {import('types').LoadInput | import('types').ErrorLoadInput} */
+		/** @type {import('types').LoadEvent} */
 		const load_input = {
-			url: state.prerender ? create_prerendering_url_proxy(url) : url,
-			params,
+			url: state.prerendering ? new PrerenderingURL(event.url) : new LoadURL(event.url),
+			params: event.params,
 			props: shadow.body || {},
+			routeId: event.routeId,
 			get session() {
+				if (node.module.prerender ?? options.prerender.default) {
+					throw Error(
+						'Attempted to access session from a prerendered page. Session would never be populated.'
+					);
+				}
 				uses_credentials = true;
 				return $session;
 			},
@@ -1652,6 +2345,7 @@ async function load_node({
 				for (const [key, value] of event.request.headers) {
 					if (
 						key !== 'authorization' &&
+						key !== 'connection' &&
 						key !== 'cookie' &&
 						key !== 'host' &&
 						key !== 'if-none-match' &&
@@ -1692,14 +2386,31 @@ async function load_node({
 							headers: type ? { 'content-type': type } : {}
 						});
 					} else {
-						response = await fetch(`${url.origin}/${file}`, /** @type {RequestInit} */ (opts));
+						response = await fetch(
+							`${event.url.origin}/${file}`,
+							/** @type {RequestInit} */ (opts)
+						);
 					}
 				} else if (is_root_relative(resolved)) {
 					if (opts.credentials !== 'omit') {
 						uses_credentials = true;
 
-						const cookie = event.request.headers.get('cookie');
 						const authorization = event.request.headers.get('authorization');
+
+						// combine cookies from the initiating request with any that were
+						// added via set-cookie
+						const combined_cookies = { ...cookies };
+
+						for (const cookie of new_cookies) {
+							if (!domain_matches(event.url.hostname, cookie.domain)) continue;
+							if (!path_matches(resolved, cookie.path)) continue;
+
+							combined_cookies[cookie.name] = cookie.value;
+						}
+
+						const cookie = Object.entries(combined_cookies)
+							.map(([name, value]) => `${name}=${value}`)
+							.join('; ');
 
 						if (cookie) {
 							opts.headers.set('cookie', cookie);
@@ -1718,16 +2429,18 @@ async function load_node({
 						throw new Error('Request body must be a string');
 					}
 
-					response = await respond(new Request(new URL(requested, event.url).href, opts), options, {
-						fetched: requested,
-						getClientAddress: state.getClientAddress,
-						initiator: route,
-						prerender: state.prerender
-					});
+					response = await respond(
+						new Request(new URL(requested, event.url).href, { ...opts }),
+						options,
+						{
+							...state,
+							initiator: route
+						}
+					);
 
-					if (state.prerender) {
+					if (state.prerendering) {
 						dependency = { response, body: null };
-						state.prerender.dependencies.set(resolved, dependency);
+						state.prerendering.dependencies.set(resolved, dependency);
 					}
 				} else {
 					// external
@@ -1754,8 +2467,21 @@ async function load_node({
 						if (cookie) opts.headers.set('cookie', cookie);
 					}
 
+					// we need to delete the connection header, as explained here:
+					// https://github.com/nodejs/undici/issues/1470#issuecomment-1140798467
+					// TODO this may be a case for being selective about which headers we let through
+					opts.headers.delete('connection');
+
 					const external_request = new Request(requested, /** @type {RequestInit} */ (opts));
 					response = await options.hooks.externalFetch.call(null, external_request);
+				}
+
+				const set_cookie = response.headers.get('set-cookie');
+				if (set_cookie) {
+					new_cookies.push(
+						...splitCookiesString_1(set_cookie)
+							.map((str) => parseString_1(str))
+					);
 				}
 
 				const proxy = new Proxy(response, {
@@ -1766,9 +2492,8 @@ async function load_node({
 							/** @type {import('types').ResponseHeaders} */
 							const headers = {};
 							for (const [key, value] of response.headers) {
-								if (key === 'set-cookie') {
-									set_cookie_headers = set_cookie_headers.concat(value);
-								} else if (key !== 'etag') {
+								// TODO skip others besides set-cookie and etag?
+								if (key !== 'set-cookie' && key !== 'etag') {
 									headers[key] = value;
 								}
 							}
@@ -1835,7 +2560,9 @@ async function load_node({
 
 				return proxy;
 			},
-			stuff: { ...stuff }
+			stuff: { ...stuff },
+			status: (is_error ? status : shadow.status) ?? null,
+			error: is_error ? error ?? null : null
 		};
 
 		if (options.dev) {
@@ -1847,16 +2574,7 @@ async function load_node({
 			});
 		}
 
-		if (is_error) {
-			/** @type {import('types').ErrorLoadInput} */ (load_input).status = status;
-			/** @type {import('types').ErrorLoadInput} */ (load_input).error = error;
-		}
-
-		loaded = await module.load.call(null, load_input);
-
-		if (!loaded) {
-			throw new Error(`load function must return a value${options.dev ? ` (${node.entry})` : ''}`);
-		}
+		loaded = normalize(await module.load.call(null, load_input));
 	} else if (shadow.body) {
 		loaded = {
 			props: shadow.body
@@ -1865,12 +2583,10 @@ async function load_node({
 		loaded = {};
 	}
 
-	if (loaded.fallthrough && !is_error) {
-		return;
-	}
+	loaded.status = loaded.status ?? shadow.status;
 
 	// generate __data.json files when prerendering
-	if (shadow.body && state.prerender) {
+	if (shadow.body && state.prerendering) {
 		const pathname = `${event.url.pathname.replace(/\/$/, '')}/__data.json`;
 
 		const dependency = {
@@ -1878,16 +2594,20 @@ async function load_node({
 			body: JSON.stringify(shadow.body)
 		};
 
-		state.prerender.dependencies.set(pathname, dependency);
+		state.prerendering.dependencies.set(pathname, dependency);
 	}
 
 	return {
 		node,
 		props: shadow.body,
-		loaded: normalize(loaded),
+		loaded,
 		stuff: loaded.stuff || stuff,
 		fetched,
-		set_cookie_headers,
+		set_cookie_headers: new_cookies.map((new_cookie) => {
+			const { name, value, ...options } = new_cookie;
+			// @ts-expect-error
+			return serialize_1(name, value, options);
+		}),
 		uses_credentials
 	};
 }
@@ -1906,13 +2626,15 @@ async function load_shadow_data(route, event, options, prerender) {
 	try {
 		const mod = await route.shadow();
 
-		if (prerender && (mod.post || mod.put || mod.del || mod.patch)) {
+		check_method_names(mod);
+
+		if (prerender && (mod.POST || mod.PUT || mod.DELETE || mod.PATCH)) {
 			throw new Error('Cannot prerender pages that have endpoints with mutative methods');
 		}
 
-		const method = normalize_request_method(event);
-		const is_get = method === 'head' || method === 'get';
-		const handler = method === 'head' ? mod.head || mod.get : mod[method];
+		const { method } = event.request;
+		const is_get = method === 'HEAD' || method === 'GET';
+		const handler = method === 'HEAD' ? mod.HEAD || mod.GET : mod[method];
 
 		if (!handler && !is_get) {
 			return {
@@ -1923,22 +2645,29 @@ async function load_shadow_data(route, event, options, prerender) {
 
 		/** @type {import('types').ShadowData} */
 		const data = {
-			status: 200,
+			status: undefined,
 			cookies: [],
 			body: {}
 		};
 
 		if (!is_get) {
-			const result = await handler(event);
-
-			if (result.fallthrough) return result;
-
-			const { status, headers, body } = validate_shadow_output(result);
+			const { status, headers, body } = validate_shadow_output(await handler(event));
+			add_cookies(/** @type {string[]} */ (data.cookies), headers);
 			data.status = status;
 
-			add_cookies(/** @type {string[]} */ (data.cookies), headers);
+			// explicit errors cause an error page...
+			if (body instanceof Error) {
+				if (status < 400) {
+					data.status = 500;
+					data.error = new Error('A non-error status code was returned with an error body');
+				} else {
+					data.error = body;
+				}
 
-			// Redirects are respected...
+				return data;
+			}
+
+			// ...redirects are respected...
 			if (status >= 300 && status < 400) {
 				data.redirect = /** @type {string} */ (
 					headers instanceof Headers ? headers.get('location') : headers.location
@@ -1952,22 +2681,31 @@ async function load_shadow_data(route, event, options, prerender) {
 			data.body = body;
 		}
 
-		const get = (method === 'head' && mod.head) || mod.get;
+		const get = (method === 'HEAD' && mod.HEAD) || mod.GET;
 		if (get) {
-			const result = await get(event);
-
-			if (result.fallthrough) return result;
-
-			const { status, headers, body } = validate_shadow_output(result);
+			const { status, headers, body } = validate_shadow_output(await get(event));
 			add_cookies(/** @type {string[]} */ (data.cookies), headers);
-			data.status = status;
+
+			if (body instanceof Error) {
+				if (status < 400) {
+					data.status = 500;
+					data.error = new Error('A non-error status code was returned with an error body');
+				} else {
+					data.status = status;
+					data.error = body;
+				}
+
+				return data;
+			}
 
 			if (status >= 400) {
+				data.status = status;
 				data.error = new Error('Failed to load data');
 				return data;
 			}
 
 			if (status >= 300) {
+				data.status = status;
 				data.redirect = /** @type {string} */ (
 					headers instanceof Headers ? headers.get('location') : headers.location
 				);
@@ -2008,6 +2746,14 @@ function add_cookies(target, headers) {
  * @param {import('types').ShadowEndpointOutput} result
  */
 function validate_shadow_output(result) {
+	// TODO remove for 1.0
+	// @ts-expect-error
+	if (result.fallthrough) {
+		throw new Error(
+			'fallthrough is no longer supported. Use matchers instead: https://kit.svelte.dev/docs/routing#advanced-routing-matching'
+		);
+	}
+
 	const { status = 200, body = {} } = result;
 	let headers = result.headers || {};
 
@@ -2022,7 +2768,9 @@ function validate_shadow_output(result) {
 	}
 
 	if (!is_pojo(body)) {
-		throw new Error('Body returned from endpoint request handler must be a plain object');
+		throw new Error(
+			'Body returned from endpoint request handler must be a plain object or an Error'
+		);
 	}
 
 	return { status, headers, body };
@@ -2055,45 +2803,50 @@ async function respond_with_error({
 	resolve_opts
 }) {
 	try {
-		const default_layout = await options.manifest._.nodes[0](); // 0 is always the root layout
-		const default_error = await options.manifest._.nodes[1](); // 1 is always the root error
+		const branch = [];
+		let stuff = {};
 
-		/** @type {Record<string, string>} */
-		const params = {}; // error page has no params
+		if (resolve_opts.ssr) {
+			const default_layout = await options.manifest._.nodes[0](); // 0 is always the root layout
+			const default_error = await options.manifest._.nodes[1](); // 1 is always the root error
 
-		const layout_loaded = /** @type {Loaded} */ (
-			await load_node({
-				event,
-				options,
-				state,
-				route: null,
-				url: event.url, // TODO this is redundant, no?
-				params,
-				node: default_layout,
-				$session,
-				stuff: {},
-				is_error: false,
-				is_leaf: false
-			})
-		);
+			const layout_loaded = /** @type {Loaded} */ (
+				await load_node({
+					event,
+					options,
+					state,
+					route: GENERIC_ERROR,
+					node: default_layout,
+					$session,
+					stuff: {},
+					is_error: false,
+					is_leaf: false
+				})
+			);
 
-		const error_loaded = /** @type {Loaded} */ (
-			await load_node({
-				event,
-				options,
-				state,
-				route: null,
-				url: event.url,
-				params,
-				node: default_error,
-				$session,
-				stuff: layout_loaded ? layout_loaded.stuff : {},
-				is_error: true,
-				is_leaf: false,
-				status,
-				error
-			})
-		);
+			if (layout_loaded.loaded.error) {
+				throw layout_loaded.loaded.error;
+			}
+
+			const error_loaded = /** @type {Loaded} */ (
+				await load_node({
+					event,
+					options,
+					state,
+					route: GENERIC_ERROR,
+					node: default_error,
+					$session,
+					stuff: layout_loaded ? layout_loaded.stuff : {},
+					is_error: true,
+					is_leaf: false,
+					status,
+					error
+				})
+			);
+
+			branch.push(layout_loaded, error_loaded);
+			stuff = error_loaded.stuff;
+		}
 
 		return await render_response({
 			options,
@@ -2103,12 +2856,11 @@ async function respond_with_error({
 				hydrate: options.hydrate,
 				router: options.router
 			},
-			stuff: error_loaded.stuff,
+			stuff,
 			status,
 			error,
-			branch: [layout_loaded, error_loaded],
-			url: event.url,
-			params,
+			branch,
+			event,
 			resolve_opts
 		});
 	} catch (err) {
@@ -2130,6 +2882,7 @@ async function respond_with_error({
  */
 
 /**
+ * Gets the nodes, calls `load` for each of them, and then calls render to build the HTML response.
  * @param {{
  *   event: import('types').RequestEvent;
  *   options: SSROptions;
@@ -2137,9 +2890,8 @@ async function respond_with_error({
  *   $session: any;
  *   resolve_opts: import('types').RequiredResolveOptions;
  *   route: import('types').SSRPage;
- *   params: Record<string, string>;
  * }} opts
- * @returns {Promise<Response | undefined>}
+ * @returns {Promise<Response>}
  */
 async function respond$1(opts) {
 	const { event, options, state, $session, route, resolve_opts } = opts;
@@ -2156,14 +2908,16 @@ async function respond$1(opts) {
 				router: true
 			},
 			status: 200,
-			url: event.url,
+			error: null,
+			event,
 			stuff: {}
 		});
 	}
 
 	try {
 		nodes = await Promise.all(
-			route.a.map((n) => options.manifest._.nodes[n] && options.manifest._.nodes[n]())
+			// we use == here rather than === because [undefined] serializes as "[null]"
+			route.a.map((n) => (n == undefined ? n : options.manifest._.nodes[n]()))
 		);
 	} catch (err) {
 		const error = coalesce_to_error(err);
@@ -2186,11 +2940,11 @@ async function respond$1(opts) {
 
 	let page_config = get_page_config(leaf, options);
 
-	if (state.prerender) {
+	if (state.prerendering) {
 		// if the page isn't marked as prerenderable (or is explicitly
 		// marked NOT prerenderable, if `prerender.default` is `true`),
 		// then bail out at this point
-		const should_prerender = leaf.prerender ?? state.prerender.default;
+		const should_prerender = leaf.prerender ?? options.prerender.default;
 		if (!should_prerender) {
 			return new Response(undefined, {
 				status: 204
@@ -2204,15 +2958,15 @@ async function respond$1(opts) {
 	/** @type {number} */
 	let status = 200;
 
-	/** @type {Error|undefined} */
-	let error;
+	/** @type {Error | null} */
+	let error = null;
 
 	/** @type {string[]} */
 	let set_cookie_headers = [];
 
 	let stuff = {};
 
-	ssr: if (resolve_opts.ssr) {
+	ssr: {
 		for (let i = 0; i < nodes.length; i += 1) {
 			const node = nodes[i];
 
@@ -2223,14 +2977,11 @@ async function respond$1(opts) {
 				try {
 					loaded = await load_node({
 						...opts,
-						url: event.url,
 						node,
 						stuff,
 						is_error: false,
 						is_leaf: i === nodes.length - 1
 					});
-
-					if (!loaded) return;
 
 					set_cookie_headers = set_cookie_headers.concat(loaded.set_cookie_headers);
 
@@ -2247,7 +2998,8 @@ async function respond$1(opts) {
 					}
 
 					if (loaded.loaded.error) {
-						({ status, error } = loaded.loaded);
+						error = loaded.loaded.error;
+						status = loaded.loaded.status ?? 500;
 					}
 				} catch (err) {
 					const e = coalesce_to_error(err);
@@ -2265,7 +3017,8 @@ async function respond$1(opts) {
 				if (error) {
 					while (i--) {
 						if (route.b[i]) {
-							const error_node = await options.manifest._.nodes[route.b[i]]();
+							const index = /** @type {number} */ (route.b[i]);
+							const error_node = await options.manifest._.nodes[index]();
 
 							/** @type {Loaded} */
 							let node_loaded;
@@ -2278,7 +3031,6 @@ async function respond$1(opts) {
 								const error_loaded = /** @type {import('./types').Loaded} */ (
 									await load_node({
 										...opts,
-										url: event.url,
 										node: error_node,
 										stuff: node_loaded.stuff,
 										is_error: true,
@@ -2338,7 +3090,7 @@ async function respond$1(opts) {
 			await render_response({
 				...opts,
 				stuff,
-				url: event.url,
+				event,
 				page_config,
 				status,
 				error,
@@ -2399,7 +3151,7 @@ function with_cookies(response, set_cookie_headers) {
  * @param {import('types').SSROptions} options
  * @param {import('types').SSRState} state
  * @param {import('types').RequiredResolveOptions} resolve_opts
- * @returns {Promise<Response | undefined>}
+ * @returns {Promise<Response>}
  */
 async function render_page(event, route, options, state, resolve_opts) {
 	if (state.initiator === route) {
@@ -2416,88 +3168,51 @@ async function render_page(event, route, options, state, resolve_opts) {
 		]);
 
 		if (type === 'application/json') {
-			return render_endpoint(event, await route.shadow());
+			return render_endpoint(event, await route.shadow(), options);
 		}
 	}
 
 	const $session = await options.hooks.getSession(event);
 
-	const response = await respond$1({
+	return respond$1({
 		event,
 		options,
 		state,
 		$session,
 		resolve_opts,
-		route,
-		params: event.params // TODO this is redundant
+		route
 	});
-
-	if (response) {
-		return response;
-	}
-
-	if (state.fetched) {
-		// we came here because of a bad request in a `load` function.
-		// rather than render the error page — which could lead to an
-		// infinite loop, if the `load` belonged to the root layout,
-		// we respond with a bare-bones 500
-		return new Response(`Bad request in load function: failed to fetch ${state.fetched}`, {
-			status: 500
-		});
-	}
 }
 
 /**
- * @param {string} accept
+ * @param {RegExpMatchArray} match
+ * @param {string[]} names
  * @param {string[]} types
+ * @param {Record<string, import('types').ParamMatcher>} matchers
  */
-function negotiate(accept, types) {
-	const parts = accept
-		.split(',')
-		.map((str, i) => {
-			const match = /([^/]+)\/([^;]+)(?:;q=([0-9.]+))?/.exec(str);
-			if (match) {
-				const [, type, subtype, q = '1'] = match;
-				return { type, subtype, q: +q, i };
-			}
+function exec(match, names, types, matchers) {
+	/** @type {Record<string, string>} */
+	const params = {};
 
-			throw new Error(`Invalid Accept header: ${accept}`);
-		})
-		.sort((a, b) => {
-			if (a.q !== b.q) {
-				return b.q - a.q;
-			}
+	for (let i = 0; i < names.length; i += 1) {
+		const name = names[i];
+		const type = types[i];
+		const value = match[i + 1] || '';
 
-			if ((a.subtype === '*') !== (b.subtype === '*')) {
-				return a.subtype === '*' ? 1 : -1;
-			}
+		if (type) {
+			const matcher = matchers[type];
+			if (!matcher) throw new Error(`Missing "${type}" param matcher`); // TODO do this ahead of time?
 
-			if ((a.type === '*') !== (b.type === '*')) {
-				return a.type === '*' ? 1 : -1;
-			}
-
-			return a.i - b.i;
-		});
-
-	let accepted;
-	let min_priority = Infinity;
-
-	for (const mimetype of types) {
-		const [type, subtype] = mimetype.split('/');
-		const priority = parts.findIndex(
-			(part) =>
-				(part.type === type || part.type === '*') &&
-				(part.subtype === subtype || part.subtype === '*')
-		);
-
-		if (priority !== -1 && priority < min_priority) {
-			accepted = mimetype;
-			min_priority = priority;
+			if (!matcher(value)) return;
 		}
+
+		params[name] = value;
 	}
 
-	return accepted;
+	return params;
 }
+
+/* global __SVELTEKIT_ADAPTER_NAME__ */
 
 const DATA_SUFFIX = '/__data.json';
 
@@ -2506,18 +3221,7 @@ const default_transform = ({ html }) => html;
 
 /** @type {import('types').Respond} */
 async function respond(request, options, state) {
-	const url = new URL(request.url);
-
-	const normalized = normalize_path(url.pathname, options.trailing_slash);
-
-	if (normalized !== url.pathname) {
-		return new Response(undefined, {
-			status: 301,
-			headers: {
-				location: normalized + (url.search === '?' ? '' : url.search)
-			}
-		});
-	}
+	let url = new URL(request.url);
 
 	const { parameter, allowed } = options.method_override;
 	const method_override = url.searchParams.get(parameter)?.toUpperCase();
@@ -2544,14 +3248,80 @@ async function respond(request, options, state) {
 		}
 	}
 
+	let decoded;
+	try {
+		decoded = decodeURI(url.pathname);
+	} catch {
+		return new Response('Malformed URI', { status: 400 });
+	}
+
+	/** @type {import('types').SSRRoute | null} */
+	let route = null;
+
+	/** @type {Record<string, string>} */
+	let params = {};
+
+	if (options.paths.base && !state.prerendering?.fallback) {
+		if (!decoded.startsWith(options.paths.base)) {
+			return new Response('Not found', { status: 404 });
+		}
+		decoded = decoded.slice(options.paths.base.length) || '/';
+	}
+
+	const is_data_request = decoded.endsWith(DATA_SUFFIX);
+
+	if (is_data_request) {
+		const data_suffix_length = DATA_SUFFIX.length - (options.trailing_slash === 'always' ? 1 : 0);
+		decoded = decoded.slice(0, -data_suffix_length) || '/';
+		url = new URL(url.origin + url.pathname.slice(0, -data_suffix_length) + url.search);
+	}
+
+	if (!state.prerendering?.fallback) {
+		const matchers = await options.manifest._.matchers();
+
+		for (const candidate of options.manifest._.routes) {
+			const match = candidate.pattern.exec(decoded);
+			if (!match) continue;
+
+			const matched = exec(match, candidate.names, candidate.types, matchers);
+			if (matched) {
+				route = candidate;
+				params = decode_params(matched);
+				break;
+			}
+		}
+	}
+
+	if (route) {
+		if (route.type === 'page') {
+			const normalized = normalize_path(url.pathname, options.trailing_slash);
+
+			if (normalized !== url.pathname && !state.prerendering?.fallback) {
+				return new Response(undefined, {
+					status: 301,
+					headers: {
+						'x-sveltekit-normalize': '1',
+						location:
+							// ensure paths starting with '//' are not treated as protocol-relative
+							(normalized.startsWith('//') ? url.origin + normalized : normalized) +
+							(url.search === '?' ? '' : url.search)
+					}
+				});
+			}
+		} else if (is_data_request) {
+			// requesting /__data.json should fail for a standalone endpoint
+			return new Response(undefined, {
+				status: 404
+			});
+		}
+	}
+
 	/** @type {import('types').RequestEvent} */
 	const event = {
 		get clientAddress() {
 			if (!state.getClientAddress) {
 				throw new Error(
-					`${
-						import.meta.env.VITE_SVELTEKIT_ADAPTER_NAME
-					} does not specify getClientAddress. Please raise an issue`
+					`${__SVELTEKIT_ADAPTER_NAME__} does not specify getClientAddress. Please raise an issue`
 				);
 			}
 
@@ -2562,9 +3332,10 @@ async function respond(request, options, state) {
 			return event.clientAddress;
 		},
 		locals: {},
-		params: {},
+		params,
 		platform: state.platform,
 		request,
+		routeId: route && route.id,
 		url
 	};
 
@@ -2607,6 +3378,8 @@ async function respond(request, options, state) {
 		transformPage: default_transform
 	};
 
+	// TODO match route before calling handle?
+
 	try {
 		const response = await options.hooks.handle({
 			event,
@@ -2618,16 +3391,16 @@ async function respond(request, options, state) {
 					};
 				}
 
-				if (state.prerender && state.prerender.fallback) {
+				if (state.prerendering?.fallback) {
 					return await render_response({
-						url: event.url,
-						params: event.params,
+						event,
 						options,
 						state,
 						$session: await options.hooks.getSession(event),
 						page_config: { router: true, hydrate: true },
 						stuff: {},
 						status: 200,
+						error: null,
 						branch: [],
 						resolve_opts: {
 							...resolve_opts,
@@ -2636,81 +3409,34 @@ async function respond(request, options, state) {
 					});
 				}
 
-				let decoded = decodeURI(event.url.pathname);
-
-				if (options.paths.base) {
-					if (!decoded.startsWith(options.paths.base)) {
-						return new Response(undefined, { status: 404 });
-					}
-					decoded = decoded.slice(options.paths.base.length) || '/';
-				}
-
-				const is_data_request = decoded.endsWith(DATA_SUFFIX);
-
-				if (is_data_request) {
-					decoded = decoded.slice(0, -DATA_SUFFIX.length) || '/';
-
-					const normalized = normalize_path(
-						url.pathname.slice(0, -DATA_SUFFIX.length),
-						options.trailing_slash
-					);
-
-					event.url = new URL(event.url.origin + normalized + event.url.search);
-				}
-
-				// `key` will be set if this request came from a client-side navigation
-				// to a page with a matching endpoint
-				const key = request.headers.get('x-sveltekit-load');
-
-				for (const route of options.manifest._.routes) {
-					if (key) {
-						// client is requesting data for a specific endpoint
-						if (route.type !== 'page') continue;
-						if (route.key !== key) continue;
-					}
-
-					const match = route.pattern.exec(decoded);
-					if (!match) continue;
-
-					event.params = route.params ? decode_params(route.params(match)) : {};
-
-					/** @type {Response | undefined} */
+				if (route) {
+					/** @type {Response} */
 					let response;
 
 					if (is_data_request && route.type === 'page' && route.shadow) {
-						response = await render_endpoint(event, await route.shadow());
+						response = await render_endpoint(event, await route.shadow(), options);
 
 						// loading data for a client-side transition is a special case
-						if (key) {
-							if (response) {
-								// since redirects are opaque to the browser, we need to repackage
-								// 3xx responses as 200s with a custom header
-								if (response.status >= 300 && response.status < 400) {
-									const location = response.headers.get('location');
+						if (request.headers.has('x-sveltekit-load')) {
+							// since redirects are opaque to the browser, we need to repackage
+							// 3xx responses as 200s with a custom header
+							if (response.status >= 300 && response.status < 400) {
+								const location = response.headers.get('location');
 
-									if (location) {
-										const headers = new Headers(response.headers);
-										headers.set('x-sveltekit-location', location);
-										response = new Response(undefined, {
-											status: 204,
-											headers
-										});
-									}
+								if (location) {
+									const headers = new Headers(response.headers);
+									headers.set('x-sveltekit-location', location);
+									response = new Response(undefined, {
+										status: 204,
+										headers
+									});
 								}
-							} else {
-								// fallthrough
-								response = new Response(undefined, {
-									status: 204,
-									headers: {
-										'content-type': 'application/json'
-									}
-								});
 							}
 						}
 					} else {
 						response =
 							route.type === 'endpoint'
-								? await render_endpoint(event, await route.load())
+								? await render_endpoint(event, await route.load(), options)
 								: await render_page(event, route, options, state, resolve_opts);
 					}
 
@@ -2752,6 +3478,12 @@ async function respond(request, options, state) {
 					}
 				}
 
+				if (state.initiator === GENERIC_ERROR) {
+					return new Response('Internal Server Error', {
+						status: 500
+					});
+				}
+
 				// if this request came direct from the user, rather than
 				// via a `fetch` in a `load`, render a 404 page
 				if (!state.initiator) {
@@ -2767,7 +3499,7 @@ async function respond(request, options, state) {
 					});
 				}
 
-				if (state.prerender) {
+				if (state.prerendering) {
 					return new Response('not found', { status: 404 });
 				}
 
@@ -2794,6 +3526,19 @@ async function respond(request, options, state) {
 
 		options.handle_error(error, event);
 
+		const type = negotiate(event.request.headers.get('accept') || 'text/html', [
+			'text/html',
+			'application/json'
+		]);
+
+		if (is_data_request || type === 'application/json') {
+			return new Response(serialize_error(error, options.get_stack), {
+				status: 500,
+				headers: { 'content-type': 'application/json; charset=utf-8' }
+			});
+		}
+
+		// TODO is this necessary? should we just return a plain 500 at this point?
 		try {
 			const $session = await options.hooks.getSession(event);
 			return await respond_with_error({

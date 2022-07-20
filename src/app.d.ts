@@ -2,11 +2,10 @@
 /// <reference types="svelte" />
 /// <reference types="vite/client" />
 
-interface ImportMeta {
-	env: {
-		API: string;
-	};
+interface ImportMetaEnv {
+	API: string;
 }
+
 type Media = {
 	genres: [Genre];
 };
@@ -90,11 +89,10 @@ type TvType = {
 	last_episode_to_air: LastAiredEpisode[];
 	name: string;
 	next_episode_to_air: null;
-	networks: Networks[];
-	origin_country: string;
+	networks: Network[];
+	origin_country: string | Array<string>;
 	number_of_episodes: number;
 	number_of_seasons: number;
-	origin_country: Array<string>;
 	original_language: string;
 	original_name: string;
 	overview: string;
@@ -102,7 +100,7 @@ type TvType = {
 	poster_path: (string | null);
 	production_companies: ProductionCompanies[];
 	production_countries: ProductionCountries[];
-	seasons: Seasons[];
+	seasons: SeasonType[];
 	spoken_languages: SpokenLanguages[];
 	status: string;
 	tagline: string;
@@ -170,7 +168,7 @@ type SeasonsType = {
 type SeasonType = {
 	_id: string;
 	air_date: string;
-	episodes: Episodes[];
+	episodes: EpisodesType[];
 	name: string;
 	overview: string;
 	id: number;
@@ -181,8 +179,8 @@ type SeasonType = {
 type EpisodesType = {
 	air_date: string;
 	episode_number: number;
-	crew: Crew[];
-	guest_stars: Guest_stars[];
+	crew: CrewType[];
+	guest_stars: GuestType[];
 	id: number;
 	name: string;
 	overview: string;
@@ -260,7 +258,7 @@ type KnownForType = {
 	overview: string;
 	origin_country: Array<string>;
 	original_name: string;
-	genre_ids: array[number];
+	genre_ids: Array<number>;
 	name: string;
 	media_type: string;
 	poster_path: string | null;
