@@ -1,7 +1,7 @@
 <script lang="ts">
 	const IMAGE_API = 'https://image.tmdb.org/t/p/w500';
 	export let datum: PersonType;
-	import DummyPerson from '$lib/svgs/dummyPerson.svelte';
+	import DummyPerson from '$lib/svgs/DummyPerson.svelte';
 </script>
 
 <section id="person-card" class="w-44 xl:h-108 xl:w-60 my-0.5 xl:my-2 bg-skin-bg xl:rounded-lg">
