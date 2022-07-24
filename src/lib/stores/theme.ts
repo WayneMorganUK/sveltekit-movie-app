@@ -1,29 +1,17 @@
-import { browser } from '$app/env'
-import { session } from '$app/stores'
-import type { SessionStore } from 'src/hooks'
-import { derived } from 'svelte/store'
-
-export enum Theme {
-    Light = 'light',
-    Dark = 'dark',
+export function toggleTheme(theme: any, $theme: any): void {
+  if ($theme.mode === 'light') {
+    theme.set({ ...$theme, mode: 'dark' });
+    updateDocument('theme', 'dark', 'light');
+  } else {
+    theme.set({ ...$theme, mode: 'light' });
+    updateDocument('theme', 'light', 'dark');
+  }
 }
 
-export const isTheme = (theme: string): theme is Theme =>
-    Object.values(Theme).includes(theme as Theme)
-
-export const theme = derived<SessionStore, Theme>(session, ($session, set) => {
-    if ($session.theme) {
-        set($session.theme)
-    } else if (browser) {
-        set(
-            window.matchMedia('(prefers-color-scheme: dark)').matches
-                ? Theme.Dark
-                : Theme.Light
-        )
-    }
-})
-
-export const setTheme = (theme: Theme) => {
-    session.update(($session) => ({ ...$session, theme }))
-    fetch('/theme', { method: 'PUT', body: theme })
+function updateDocument(name: string, klass: string, other: string) {
+  document.cookie = `${name}=${klass};path=/;expires=Fri, 31 Dec 9999 23:59:59 GMT`;
+  document.getElementById('core').classList.remove(other);
+  document.documentElement.classList.remove(other);
+  document.getElementById('core').classList.add(klass);
+  document.documentElement.classList.add(klass);
 }

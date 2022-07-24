@@ -20,11 +20,11 @@
 			/>
 			<div class="p-2 xl:ml-4">
 				<h6
-					class="w-40 overflow-hidden text-sm xl:text-lg text-skin-base xl:w-52 whitespace-nowrap overflow-ellipsis"
+					class="w-40 overflow-hidden text-sm xl:text-md text-skin-base xl:w-52 whitespace-nowrap overflow-ellipsis"
 				>
 					{datum.title}
 				</h6>
-				<h6 class="font-bold xl:text-lg">
+				<h6 class="text-sm">
 					{datum.release_date ? datum.release_date.substring(0, 4) : '-'}
 				</h6>
 			</div>
@@ -36,8 +36,8 @@
 			class="absolute top-0 bottom-0 right-0 z-10 w-full h-full p-2 overflow-auto text-sm duration-300 ease-in-out rounded-lg backface-hidden text-skin-base bg-skin-bg text-decoration-none rotate-y-180 movie-back"
 			href={`/movie/${datum.id}`}
 		>
-			<h6 class="mt-1 uppercase rounded xl:text-xl text-skin-base bg-secondary">Overview</h6>
-			<p class="mt-1 md:text-base">{datum.overview}</p>
+			<h6 class="mt-1 uppercase rounded xl:text-lg text-skin-base bg-secondary">Overview</h6>
+			<p class="mt-1 text-sm">{datum.overview}</p>
 		</a>
 	</div>
 </section>

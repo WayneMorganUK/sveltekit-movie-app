@@ -1,15 +1,14 @@
 <script context="module" lang="ts">
-	/**
-	 * @type {import('@sveltejs/kit').Load}
-	 */
+	/** * @type {import('@sveltejs/kit').Load} */
 	import { tv_genres, movie_genres } from '$lib/stores/store';
-	export async function load({ fetch }) {
+	export async function load({ fetch, session }: { fetch: any; session: any }) {
 		try {
 			const resTv = await (await fetch('/api/getTvGenres')).json();
 			tv_genres.set(resTv.tv_genres);
 			const resMovie = await (await fetch('/api/getMovieGenres')).json();
 			movie_genres.set(resMovie.movie_genres);
-			return {};
+			const localTheme: string = session.theme;
+			return { props: { localTheme } };
 		} catch (e) {
 			console.log('error', e);
 		}
@@ -17,31 +16,57 @@
 </script>
 
 <script lang="ts">
+	import { session } from '$app/stores';
+	import { onMount } from 'svelte';
 	import '../app.css';
-	import Header from '$lib/components/Header.svelte';
+	import Header from '$lib/components/Header/Header.svelte';
 	import Footer from '$lib/components/Footer.svelte';
-	import { theme } from '$lib/stores/theme';
+	import { theme } from '$lib/stores/store';
+	export let localTheme: string;
+
+	onMount(() => {
+		// We load the in the <script> tag in load, but then also here onMount to setup stores
+		if (!('theme' in localStorage)) {
+			theme.useLocalStorage();
+			if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+				localTheme = 'dark';
+				theme.set({ ...$theme, mode: 'dark' });
+			} else {
+				localTheme = 'light';
+				theme.set({ ...$theme, mode: 'light' });
+			}
+		} else {
+			theme.useLocalStorage();
+		}
+	});
 </script>
 
 <svelte:head>
-	<!-- <link rel="preconnect" href="https://fonts.gstatic.com" /> -->
-	<!-- <link
-		rel="stylesheet"
-		href="https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,400;0,600;0,700;1,400&display=swap"
-	/> -->
-	<!-- <link
-		rel="stylesheet"
-		href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css"
-	/> -->
-
+	<script>
+		if (!('theme' in localStorage)) {
+			if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+				document.documentElement.classList.add('dark');
+				document.cookie = 'theme=dark;path=/;expires=Fri, 31 Dec 9999 23:59:59 GMT;';
+			} else {
+				document.documentElement.classList.remove('dark');
+				document.cookie = 'theme=light;path=/;expires=Fri, 31 Dec 9999 23:59:59 GMT;';
+			}
+		} else {
+			let data = localStorage.getItem('theme');
+			if (data) {
+				data = JSON.parse(data);
+				document.documentElement.classList.add(data.mode);
+			}
+		}
+	</script>
 	<title>TMDB on Sveltekit</title>
 	<meta name="description" content="TMDB movie & tv database" />
 	<meta name="keywords" content="HTML, CSS, JavaScript, svelte" />
 	<meta name="author" content="Wayne Morgan" />
 </svelte:head>
 
-<main class={$theme}>
-	<div class="fixed top-0 w-full min-h-screen -z-50 bg-gradient-to-r from-skin-bg to-skin-border" />
+<main id="core" class={localTheme}>
+	<div class="fixed top-0 w-full min-h-screen -z-50 bg-skin-bg" />
 
 	<Header />
 	<Footer />

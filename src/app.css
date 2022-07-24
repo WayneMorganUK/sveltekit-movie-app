@@ -4,25 +4,28 @@
 @tailwind utilities;
 
 @layer base {
-	.light {
-		--color-text-base: #eae2e2;
+	.light {	
+		--color-text-base: #120f0f;
 		--color-text-muted: #ffcf91;
 		--color-text-inverted: #ffffff;
-		--color-text-muted-inverted: #d7d7d7;
+		--color-text-muted-inverted: #521111;
 		--color-text-selected: #f19f36;
-		--color-bg: #938e94;
-		--color-primary: #5d5c61;
-		--color-secondary: #7395ae;
+		--color-bg: #c3c1ad;
+		--color-primary: #939395;
+		--color-secondary: #a8b0b7;
 		--color-tertiary: #557a95;
-		--color-border: #b0a295;
+		--color-border: #d9d4cf;
 	}
+
+
+
 
 	.dark {
 		--color-text-base: #09d3ac;
 		--color-text-muted: #ffffff;
 		--color-text-inverted: #ececec;
 		--color-text-muted-inverted: #616161;
-		--color-text-selected: #79b646;
+		--color-text-selected: #6ec1b4;
 		--color-bg: #000000;
 		--color-primary: #021973;
 		--color-secondary: #0b327d;
@@ -30,14 +33,15 @@
 		--color-border: #1d536d;
 	}
 
-	/* @font-face {
-		font-family: 'Raleway';
-		font-weight: 400;
+	@font-face {
+		font-family: 'Poppins';
 		font-style: normal;
-		unicode-range: U+000-5FF;
-		src: local('Raleway');
-		font-display: swap;
-	} */
+		font-weight: 300;
+		src: url('/fonts/poppins/Poppins-Regular.ttf'); /* IE9 Compat Modes */
+		src: local(''),
+			 url('/fonts/Poppins-Regular.ttf') format('truetype'), /* Safari, Android, iOS */
+			
+	  }
 
 	h1 {
 		@apply text-4xl;
@@ -67,7 +71,6 @@
 	h5,
 	h6 {
 		@apply font-semibold;
-		/* @apply font-Raleway; */
 	}
 	body {
 		@apply mx-auto;

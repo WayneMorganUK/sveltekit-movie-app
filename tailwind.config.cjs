@@ -1,8 +1,13 @@
 const plugin = require('tailwindcss/plugin');
+const defaultTheme = require('tailwindcss/defaultTheme')
 const config = {
 	content: ['./src/**/*.{html,js,svelte,ts,svg}'],
+	darkMode: 'class',
 	theme: {
 		extend: {
+			fontFamily: {
+				sans: ['Poppins', ...defaultTheme.fontFamily.sans]
+			  },
 			borderColor: {
 				skin: {
 					border: 'var(--color-border)',
