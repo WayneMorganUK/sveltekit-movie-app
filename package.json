@@ -1,6 +1,7 @@
 {
 	"name": "sveltekit-movie-app",
 	"version": "0.0.1",
+	"engines": { "node" : "16.16.0" },
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
