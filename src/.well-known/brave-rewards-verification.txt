@@ -1,0 +1,4 @@
+This is a Brave Rewards publisher verification file.
+
+Domain: athena-designs.com
+Token: 470e6eab605bb755bdab2622b59e2e6359868bb36cd28fa566c0bf240843ee88
