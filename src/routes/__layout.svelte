@@ -45,10 +45,12 @@
 		if (!('theme' in localStorage)) {
 			if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
 				document.documentElement.classList.add('dark');
-				document.cookie = 'theme=dark;path=/;expires=Fri, 31 Dec 9999 23:59:59 GMT;';
+				document.cookie =
+					'theme=dark;path=/;Samesite=strict;expires=Fri, 31 Dec 9999 23:59:59 GMT;';
 			} else {
 				document.documentElement.classList.remove('dark');
-				document.cookie = 'theme=light;path=/;expires=Fri, 31 Dec 9999 23:59:59 GMT;';
+				document.cookie =
+					'theme=light;path=/;Samesite=strict;expires=Fri, 31 Dec 9999 23:59:59 GMT;';
 			}
 		} else {
 			let data = localStorage.getItem('theme');

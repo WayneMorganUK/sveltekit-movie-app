@@ -16,7 +16,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
   if (!cookies.theme) {
     const theme = event.request.headers.get('theme') || 'dark';
-    response.headers.append('set-cookie', `theme=${theme};path=/;expires=Fri, 31 Dec 9999 23:59:59 GMT`);
+    response.headers.append('set-cookie', `theme=${theme};Samesite=strict;path=/;expires=Fri, 31 Dec 9999 23:59:59 GMT`);
   }
 
   return response
