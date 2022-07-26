@@ -15,8 +15,8 @@
 		element.addEventListener('scroll', onScroll);
 	}
 
-	const onScroll = (ev: Event) => {
-		const offset = calcOffset(ev);
+	const onScroll = (event: Event) => {
+		const offset = calcOffset(event);
 		if (offset <= 450) {
 			if (!isLoadMore) {
 				dispatch('loadMore');
@@ -27,8 +27,8 @@
 		}
 	};
 
-	const calcOffset = (e: Event) => {
-		const target = e.target as Document;
+	const calcOffset = (event: Event) => {
+		const target = event.target as Document;
 		const element = target.documentElement;
 		return element.scrollHeight - element.clientHeight - element.scrollTop;
 	};

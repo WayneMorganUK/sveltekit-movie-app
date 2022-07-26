@@ -1,4 +1,4 @@
-<script lang="ts">
+<!-- <script lang="ts">
 	import { afterUpdate } from 'svelte';
 	export let progress: number;
 	let progress_percent: number;
@@ -47,4 +47,4 @@
 			</div>
 		</div>
 	</div>
-</section>
+</section> -->

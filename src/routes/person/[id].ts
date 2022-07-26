@@ -4,7 +4,7 @@ const api = import.meta.env.VITE_API_KEY;
 * @type {import('@sveltejs/kit').Load}
 */
 
-export async function GET({ params }) {
+export async function GET({ params }: { params: { id: number } }) {
     const api_url = `https://api.themoviedb.org/3/person/${params.id}?api_key=${api}&language=en-US`
     const res = await fetch(api_url)
     const _person = await res.json()

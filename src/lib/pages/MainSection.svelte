@@ -5,11 +5,24 @@
 	import InfiniteScroll from '$lib/utilities/InfiniteScroll.svelte';
 	// import { current_page } from '$lib/stores/store';
 	// import { get } from 'svelte/store';
-	export let data;
+	export let data: MovieResult[] | ShowResult[] | PersonResult[];
 	export let total_pages = 1;
-	export let genres: number = undefined;
-	export let searching: string = undefined;
+	export let genres: number | undefined = undefined;
+	export let searching: string | undefined = undefined;
 	export let media_type: MediaType;
+	let moviedata: MovieResult[];
+	if (media_type === 'movie') {
+		moviedata = data as MovieResult[];
+	}
+	let tvdata: ShowResult[];
+	if (media_type === 'tv') {
+		tvdata = data as ShowResult[];
+	}
+	let persondata: PersonResult[];
+	if (media_type === 'person') {
+		persondata = data as PersonResult[];
+	}
+
 	let current_page = 1;
 
 	async function moreData() {
@@ -53,7 +66,17 @@
 
 		const datas = await res.json();
 		const res_results = datas.res.results;
-		data = [...data, ...res_results];
+		if (media_type === 'movie') {
+			moviedata = [...moviedata, ...res_results];
+		}
+
+		if (media_type === 'tv') {
+			tvdata = [...tvdata, ...res_results];
+		}
+
+		if (media_type === 'person') {
+			persondata = [...persondata, ...res_results];
+		}
 	}
 
 	function loadMorePages() {
@@ -64,15 +87,14 @@
 
 <section id="main" class="h-full">
 	<!-- <PageTitle /> -->
-	{#key data.length}
-		{#if media_type === 'person'}
-			<PersonList {data} />
-		{:else if media_type === 'movie'}
-			<MovieList {data} />
-		{:else if media_type === 'tv'}
-			<TvList {data} />
-		{/if}
-	{/key}
+
+	{#if media_type === 'person'}
+		<PersonList data={persondata} />
+	{:else if media_type === 'movie'}
+		<MovieList data={moviedata} />
+	{:else if media_type === 'tv'}
+		<TvList data={tvdata} />
+	{/if}
 
 	{#if current_page < total_pages}
 		<InfiniteScroll on:loadMore={() => loadMorePages()} />

@@ -37,10 +37,8 @@
 		font-family: 'Poppins';
 		font-style: normal;
 		font-weight: 300;
-		src: url('/fonts/poppins/Poppins-Regular.ttf'); /* IE9 Compat Modes */
-		src: local(''),
-			 url('/fonts/Poppins-Regular.ttf') format('truetype'), /* Safari, Android, iOS */
-			
+		src: url('/fonts/poppins/Poppins-Regular.ttf'); 
+		src: url('/fonts/poppins/Poppins-Regular.ttf') format('truetype')			
 	  }
 
 	h1 {

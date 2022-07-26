@@ -1,8 +1,8 @@
 <script lang="ts">
-	import ProgressBar from '$lib/utilities/ProgressBar.svelte';
+	import ProgressBar from '$lib/svgs/ProgressBar.svelte';
 	const IMAGE_API = 'https://image.tmdb.org/t/p/w300';
-	export let datum: TvType;
-	// $show_name = datum.name;
+	export let datum: ShowResult;
+	let percent = Math.floor(datum.vote_average * 10);
 </script>
 
 <section id="tv-card" class="group perspective-1000 w-44 xl:w-60 my-0.5 xl:my-2 xl:rounded-lg">
@@ -23,8 +23,15 @@
 					{datum.first_air_date ? datum.first_air_date.substring(0, 4) : '-'}
 				</h6>
 			</div>
-			<div class="absolute origin-top-left transform scale-44 left-1 top-56 xl:top-80">
-				<ProgressBar progress={datum.vote_average} />
+			<div
+				class="absolute origin-top-left h-12 w-12 p-0 rounded-full bg-black left-1 top-56 xl:top-80"
+			>
+				<ProgressBar {percent} />
+				<div class="absolute top-0 left-[1px] w-full h-full flex justify-center items-center">
+					<p class="text-gray-200 text-base">
+						{percent}<span class="text-[0.5rem] leading-4 align-top">%</span>
+					</p>
+				</div>
 			</div>
 		</div>
 		<a

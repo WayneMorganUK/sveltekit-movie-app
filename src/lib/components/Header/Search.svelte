@@ -36,12 +36,12 @@
 		>
 			<svelte:component this={selectedMedia.component} />
 			<div
-				class="hidden group-hover:flex flex-col gap-2 w-28 p-2 pl-[18px] -ml-2 border-skin-border bg-skin-primary text-skin-base"
+				class="hidden  group-hover:flex flex-col gap-2 w-28 p-2 pl-[18px] -ml-2 border-skin-border bg-skin-primary text-skin-base"
 			>
 				{#each mediaOptions as option}
 					<div
 						on:click={() => (selectedMedia = option)}
-						class="relative flex flex-row gap-3 -left-2 hover:text-skin-selected "
+						class="relative flex flex-row gap-3 -left-2 peer text-skin-inverted group-hover:text-skin-selected"
 						value={option}
 					>
 						<svelte:component this={option.component} />
@@ -52,7 +52,7 @@
 		</div>
 		<input
 			label="search"
-			class="w-24 h-8 px-2 text-lg bg-transparent border-2 border-l-0 rounded-r-full outline-none lg:w-48 placeholder-text-skin-base::placeholder border-skin-border"
+			class="w-24 h-8 px-2 text-lg bg-transparent border-2 text-white border-l-0 rounded-r-full outline-none lg:w-48 placeholder-text-skin-inverted::placeholder border-skin-border"
 			type="text"
 			placeholder="Search..."
 			bind:value={searchTerm}

@@ -3,7 +3,7 @@ const api = import.meta.env.VITE_API_KEY;
  * @type {import('@sveltejs/kit').Load}
  */
 
-export async function GET({ params }) {
+export async function GET({ params }: { params: { media: MediaType, id: number } }) {
     const api_url = `https://api.themoviedb.org/3/search/${params.media}?api_key=${api}&language=en-US&page=1&include_adult=false&query=${params.id}`
     const response = await fetch(api_url);
     const res = await response.json();

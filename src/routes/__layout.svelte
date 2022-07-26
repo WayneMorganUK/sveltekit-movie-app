@@ -16,7 +16,6 @@
 </script>
 
 <script lang="ts">
-	import { session } from '$app/stores';
 	import { onMount } from 'svelte';
 	import '../app.css';
 	import Header from '$lib/components/Header/Header.svelte';
@@ -42,7 +41,7 @@
 </script>
 
 <svelte:head>
-	<script>
+	<script lang="ts">
 		if (!('theme' in localStorage)) {
 			if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
 				document.documentElement.classList.add('dark');
@@ -60,9 +59,6 @@
 		}
 	</script>
 	<title>TMDB on Sveltekit</title>
-	<meta name="description" content="TMDB movie & tv database" />
-	<meta name="keywords" content="HTML, CSS, JavaScript, svelte" />
-	<meta name="author" content="Wayne Morgan" />
 </svelte:head>
 
 <main id="core" class={localTheme}>

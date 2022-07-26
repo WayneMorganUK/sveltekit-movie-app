@@ -2,7 +2,6 @@
 	class=" w-5 h-5 fill-inverted group-hover:fill-selected"
 	aria-hidden="true"
 	role="img"
-	style="vertical-align: -0.125em;"
 	preserveAspectRatio="xMidYMid meet"
 	viewBox="0 0 24 24"
 >

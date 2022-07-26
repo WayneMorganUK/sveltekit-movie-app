@@ -1,7 +1,7 @@
 <script lang="ts">
 	// import { trailer_key, video_site } from '$lib/stores/store';
-	export let trailer_key;
-	export let video_site;
+	export let trailer_key: string;
+	export let video_site: string;
 	let shown = false;
 	export function show(): void {
 		shown = true;

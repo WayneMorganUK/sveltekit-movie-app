@@ -1,5 +1,5 @@
 <script lang="ts">
-	import ProgressBar from '$lib/utilities/ProgressBar.svelte';
+	import ProgressBar from '$lib/svgs/ProgressBar.svelte';
 	import Modal from '$lib/utilities/Modal.svelte';
 	import Cast from '$lib/components/Cast.svelte';
 	import Seasons from '$lib/utilities/Seasons.svelte';
@@ -9,15 +9,16 @@
 	export let trailer_details: TrailerType[];
 	export let tv_id: string;
 	export let cast_details: CastType[];
+	let percent = Math.floor(tv_details.vote_average * 10);
 
-	let trailer_key;
-	let video_site;
+	let trailer_key: string;
+	let video_site: string;
 
 	const IMAGE_API = 'https://image.tmdb.org/t/p/';
 
-	const show_name = tv_details.name;
-	const season_count = tv_details.number_of_seasons;
-	const show_id = tv_details.id;
+	// const show_name = tv_details.name;
+	// const season_count = tv_details.number_of_seasons;
+	// const show_id = tv_details.id;
 
 	let modal: { show: () => any };
 	function showModal(trailer: string, site: string): void {
@@ -59,13 +60,6 @@
 							{tv_details ? tv_details.first_air_date.substring(0, 4) : ''}
 						</span>
 					</h4>
-					{#if tv_details.vote_average}
-						<div
-							class="inline-flex justify-center transform -translate-x-5 bg-transparent align-center scale-60"
-						>
-							<ProgressBar progress={tv_details.vote_average} />
-						</div>
-					{/if}
 					<div class="md:flex">
 						<div class="pl-0">
 							{'first_air_date' in tv_details ? tv_details.first_air_date : 'No Date Available'}
@@ -99,7 +93,22 @@
 				</div>
 				<div class="w-full">
 					<div class="text-lg italic opacity-70">{tv_details.tagline}</div>
-					<h4 class="w-full my-2 font-semibold">Overview</h4>
+
+					<div class="flex justify-between items-center">
+						<h4 class="w-full font-semibold">Overview</h4>
+						{#if tv_details.vote_average}
+							<div class="h-12 w-12 rounded-full bg-black">
+								<ProgressBar {percent} />
+								<div
+									class="relative top-0 left-0 -translate-y-12 w-12 h-12 flex justify-center items-center"
+								>
+									<p class="text-gray-200 text-base">
+										{percent}<span class="text-[0.5rem] leading-4 align-top">%</span>
+									</p>
+								</div>
+							</div>
+						{/if}
+					</div>
 					<div class="overview-details">{tv_details.overview}</div>
 				</div>
 			</div>

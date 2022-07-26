@@ -1,8 +1,8 @@
 <script lang="ts">
 	import PersonCard from '$lib/components/PersonCard.svelte';
 	import Skeleton from '$lib/utilities/Skeleton.svelte';
-	export let data;
-	let PersonData = data as PersonType[];
+	export let data: PersonResult[];
+	let PersonData = data as PersonResult[];
 </script>
 
 <section

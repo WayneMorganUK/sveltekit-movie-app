@@ -1,6 +1,6 @@
 <script lang="ts">
 	const IMAGE_API = 'https://image.tmdb.org/t/p/w500';
-	export let datum: PersonType;
+	export let datum: PersonResult;
 	import DummyPerson from '$lib/svgs/DummyPerson.svelte';
 </script>
 

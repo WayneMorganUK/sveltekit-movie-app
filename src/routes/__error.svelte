@@ -1,10 +1,21 @@
-<script context="module">
-	/** @type {import('@sveltejs/kit').Load} */
-	export function load({ error }) {
-		return {
-			props: { message: error.message }
-		};
-	}
+<script context="module" lang="ts">
+	import type { Load } from '@sveltejs/kit';
+
+	export const load: Load = ({ error, status }) => {
+		if (error && error.message) {
+			return {
+				props: {
+					message: `${status}: ${error.message}`
+				}
+			};
+		} else {
+			return {
+				props: {
+					message: `${status}: ${error}`
+				}
+			};
+		}
+	};
 </script>
 
 <script lang="ts">

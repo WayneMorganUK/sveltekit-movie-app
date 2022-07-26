@@ -8,10 +8,13 @@ export function toggleTheme(theme: any, $theme: any): void {
   }
 }
 
-function updateDocument(name: string, klass: string, other: string) {
-  document.cookie = `${name}=${klass};path=/;expires=Fri, 31 Dec 9999 23:59:59 GMT`;
-  document.getElementById('core').classList.remove(other);
-  document.documentElement.classList.remove(other);
-  document.getElementById('core').classList.add(klass);
-  document.documentElement.classList.add(klass);
+function updateDocument(name: string, newMode: string, prevMode: string) {
+  document.cookie = `${name}=${newMode};path=/;expires=Fri, 31 Dec 9999 23:59:59 GMT`;
+  let element = document.getElementById('core')
+  if (element != null) {
+    element.classList.remove(prevMode);
+    document.documentElement.classList.remove(prevMode);
+    element.classList.add(newMode);
+    document.documentElement.classList.add(newMode);
+  }
 }

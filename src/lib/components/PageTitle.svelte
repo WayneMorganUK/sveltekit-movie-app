@@ -1,9 +1,9 @@
-<script lang="ts">
+<!-- <script lang="ts">
 	import { media_type, movie_genres, tv_genres } from '$lib/stores/store';
 	import { page } from '$app/stores';
 	let page_title: string;
 	let media_option: string;
-	let genre: string;
+	let genre: string | undefined;
 
 	if ($media_type === 'tv') {
 		media_option = 'TV';
@@ -16,9 +16,9 @@
 		page_title = media_option + ' > Search > ' + $page.url.pathname.substring(8);
 	} else if ($page.url.pathname !== '/') {
 		if ($media_type === 'tv') {
-			genre = $tv_genres.find((item) => (item.id as unknown) == $page.params.id).name;
+			genre = $tv_genres.find((item) => item.id == $page.params.id).name;
 		} else {
-			genre = $movie_genres.find((item) => (item.id as unknown) == $page.params.id).name;
+			genre = $movie_genres.find((item) => item.id == $page.params.id).name;
 		}
 
 		page_title = media_option + ' > ' + genre;
@@ -29,4 +29,4 @@
 
 <div class=" bg-skin-primary text-skin-base max-w-7xl xl:rounded-2xl xl:mt-2">
 	<h4 class="py-2 ml-4">{page_title}</h4>
-</div>
+</div> -->

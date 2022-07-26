@@ -6,6 +6,86 @@ interface ImportMetaEnv {
 	API: string;
 }
 
+interface RootResponse {
+	page: number;
+	results: MovieResult[] | ShowResult[] | PersonResult[];
+	total_pages: number;
+	total_results: number;
+}
+
+interface MovieResult {
+	adult: boolean;
+	backdrop_path: string;
+	id: number;
+	title: string;
+	original_language: string;
+	original_title: string;
+	overview: string;
+	poster_path: string;
+	media_type: string;
+	genre_ids: number[];
+	popularity: number;
+	release_date: string;
+	video: boolean;
+	vote_average: number;
+	vote_count: number;
+}
+
+interface ShowResult {
+	adult: boolean;
+	backdrop_path: string;
+	id: number;
+	name: string;
+	original_language: string;
+	original_name: string;
+	overview: string;
+	poster_path: string;
+	media_type: string;
+	genre_ids: number[];
+	popularity: number;
+	first_air_date: string;
+	vote_average: number;
+	vote_count: number;
+	origin_country: string[];
+}
+
+interface KnownFor {
+	adult: boolean;
+	backdrop_path: string;
+	id: number;
+	title: string;
+	original_language: string;
+	original_title: string;
+	overview: string;
+	poster_path: string;
+	media_type: string;
+	genre_ids: number[];
+	popularity: number;
+	release_date: string;
+	video: boolean;
+	vote_average: number;
+	vote_count: number;
+	name: string;
+	original_name: string;
+	first_air_date: string;
+	origin_country: string[];
+}
+interface PersonResult {
+	adult: boolean;
+	id: number;
+	name: string;
+	original_name: string;
+	media_type: string;
+	popularity: number;
+	gender: number;
+	known_for_department: string;
+	profile_path: string;
+	known_for: KnownFor[];
+}
+
+
+
+
 type Media = {
 	genres: [Genre];
 };
@@ -287,3 +367,9 @@ type KnownForType = {
 
 // 	interface Stuff { }
 // }
+
+declare namespace App {
+	interface Locals {
+		theme: string | null;
+	}
+}

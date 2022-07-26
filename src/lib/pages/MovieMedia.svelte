@@ -1,5 +1,5 @@
 <script lang="ts">
-	import ProgressBar from '$lib/utilities/ProgressBar.svelte';
+	import ProgressBar from '$lib/svgs/ProgressBar.svelte';
 	import Modal from '$lib/utilities/Modal.svelte';
 	import Cast from '$lib/components/Cast.svelte';
 	import { browser } from '$app/env';
@@ -7,9 +7,10 @@
 	export let movie_details: MovieType;
 	export let trailer_details: TrailerType[];
 	export let cast_details: CastType[];
+	let percent = Math.floor(movie_details.vote_average * 10);
 
-	let trailer_key;
-	let video_site;
+	let trailer_key: string;
+	let video_site: string;
 
 	const IMAGE_API = 'https://image.tmdb.org/t/p/';
 
@@ -53,14 +54,6 @@
 							{movie_details.release_date ? movie_details.release_date.substring(0, 4) : ''}
 						</span>
 					</h4>
-					{#if movie_details.vote_average}
-						<div
-							class="inline-flex justify-center transform -translate-x-5 bg-transparent align-center scale-60"
-						>
-							<ProgressBar progress={movie_details.vote_average} />
-						</div>
-					{/if}
-
 					<div class="md:flex">
 						<div class="pl-0">
 							{movie_details.release_date ? movie_details.release_date : 'No Date Available'}
@@ -72,7 +65,7 @@
 								{#if i !== movie_details.genres.length - 1}<span class="mx-2">|</span>{/if}
 							{/each}
 						</div>
-						{#if 'runtime' in movie_details}
+						{#if movie_details && movie_details.runtime}
 							<div class="duration">
 								<span class="hidden md:px-2 md:inline">&#x2022;</span>{(movie_details.runtime -
 									(movie_details.runtime % 60)) /
@@ -103,7 +96,21 @@
 				</div>
 				<div class="w-full">
 					<div class="text-lg italic opacity-70">{movie_details.tagline}</div>
-					<h4 class="w-full my-2 font-semibold">Overview</h4>
+					<div class="flex justify-between items-center">
+						<h4 class="w-full font-semibold">Overview</h4>
+						{#if movie_details.vote_average}
+							<div class="h-12 w-12 p-0 rounded-full bg-black">
+								<ProgressBar {percent} />
+								<div
+									class="relative top-0 left-0 -translate-y-12 w-12 h-12 flex justify-center items-center"
+								>
+									<p class="text-gray-200 text-base">
+										{percent}<span class="text-[0.5rem] leading-4 align-top">%</span>
+									</p>
+								</div>
+							</div>
+						{/if}
+					</div>
 					<div class="overview-details">{movie_details.overview}</div>
 				</div>
 			</div>
